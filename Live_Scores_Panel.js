@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
-// @namespace    https://greasyfork.org/users/daftvino
-// @version      2.5.1
+// @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
+// @version      2.5.2
 // @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools, four themes, provider toggles, and debug mode.
 // @author       DaftVino
 // @license      MIT
@@ -21,8 +21,8 @@
 // @connect      api.nhle.com
 // @connect      api.the-odds-api.com
 // @connect      api.pandascore.co
-// @homepage     https://greasyfork.org/scripts/torn-bookie-live-scores
-// @supportURL   https://greasyfork.org/scripts/torn-bookie-live-scores/feedback
+// @homepage     hhttps://greasyfork.org/en/scripts/583676-torn-bookie-live-scores
+// @supportURL   https://greasyfork.org/en/scripts/583676-torn-bookie-live-scores/feedback
 // @run-at       document-start
 // ==/UserScript==
 
