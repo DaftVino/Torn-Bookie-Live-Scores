@@ -1,0 +1,116 @@
+'use strict';
+
+// Headless substitute for the (absent) preview HTML harness. The userscript's
+// row/scoreboard renderers are pure string builders, so we can exercise every UI
+// state the panel can show — loading/empty, upcoming, live, completed, delayed,
+// error, unmatched (partial-provider) — and assert correctness + XSS-safety
+// without a browser DOM. Re-rendering must be idempotent (no duplicated markup).
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadUserscript } = require('./load-userscript');
+const { liveMatch, NOW } = require('./fixtures');
+
+const a = loadUserscript();
+
+function withScore(extra) {
+  return liveMatch({ score: Object.assign({ found: true, sourceKey: 'espn', sourceLabel: 'ESPN', team1Score: 3, team2Score: 1, detail: 'Top 5th' }, extra) });
+}
+
+test('live state: matched scoreboard shows both teams and scores', () => {
+  a.__control.setNow(NOW);
+  const html = a.renderLiveMatch(withScore());
+  assert.match(html, /Boston Red Sox/);
+  assert.match(html, /New York Yankees/);
+  assert.match(html, /tm-bookie-live-row/);
+});
+
+test('completed state: final detail surfaces in the status line', () => {
+  a.__control.setNow(NOW);
+  const html = a.renderLiveMatch(withScore({ detail: 'Final', team1Score: 5, team2Score: 2 }));
+  assert.match(html, /Final/);
+});
+
+test('delayed/unmatched (partial-provider) state: shows "Score not matched"', () => {
+  a.__control.setNow(NOW);
+  const m = liveMatch({ score: { found: false, detail: 'ESPN: no events for 2026-06-20' } });
+  const html = a.renderScoreboard(m);
+  assert.match(html, /Score not matched/);
+  assert.match(html, /no events/);
+});
+
+test('upcoming state: shows match name and start-time prefix', () => {
+  a.__control.setNow(NOW);
+  const html = a.renderUpcomingMatch(liveMatch({ name: 'Red Sox vs Yankees', sectionType: 'upcoming', status: 'notstarted' }));
+  assert.match(html, /Starts/);
+  assert.match(html, /Red Sox vs Yankees/);     // upcoming rows show the match name
+  assert.match(html, /tm-bookie-upcoming-row-card/);
+});
+
+test('empty state: renderSportGroups returns empty string for no matches', () => {
+  assert.equal(a.renderSportGroups('live', 'Live', [], a.renderLiveMatch), '');
+});
+
+test('error state: dynamic text is HTML-escaped, known capture message is friendly', () => {
+  assert.equal(
+    a.renderErrorBody({ message: '<script>alert(1)</script>' }),
+    '&lt;script&gt;alert(1)&lt;/script&gt;'
+  );
+  assert.match(a.renderErrorBody({ message: 'Be sure you have selected YOUR BETS.' }), /<strong>Be sure you have selected YOUR BETS\.<\/strong>/);
+});
+
+test('XSS-safety: malicious team name / detail are escaped in every scoreboard style', () => {
+  a.__control.setNow(NOW);
+  const evil = '<img src=x onerror=alert(1)>';
+  for (const style of ['compact', 'classic', 'minimal']) {
+    a.uiSettings.scoreboardStyle = style;
+    const html = a.renderScoreboard(withScore({ })) // safe baseline
+      + a.renderLiveMatch(liveMatch({ team1: evil, score: { found: true, team1Score: '1', team2Score: '0', detail: evil } }));
+    assert.ok(!html.includes('<img src=x onerror=alert(1)>'), `style ${style} leaked raw HTML`);
+    assert.ok(html.includes('&lt;img'), `style ${style} did not escape`);
+  }
+  a.uiSettings.scoreboardStyle = 'compact'; // restore
+});
+
+test('scoreboard styles all render the matched score', () => {
+  a.__control.setNow(NOW);
+  for (const style of ['compact', 'classic', 'minimal']) {
+    a.uiSettings.scoreboardStyle = style;
+    const html = a.renderScoreboard(withScore());
+    assert.match(html, /3/);
+    assert.match(html, /1/);
+  }
+  a.uiSettings.scoreboardStyle = 'compact';
+});
+
+test('re-rendering the same match is idempotent (no markup drift / duplication)', () => {
+  a.__control.setNow(NOW);
+  const m = withScore();
+  const once = a.renderLiveMatch(m);
+  for (let i = 0; i < 20; i++) {
+    assert.equal(a.renderLiveMatch(m), once);
+  }
+  // exactly one details button and one row per render
+  assert.equal((once.match(/tm-bookie-details-btn/g) || []).length, 1);
+  assert.equal((once.match(/tm-bookie-live-row/g) || []).length, 1);
+});
+
+test('renderSportGroups groups multiple sports and renders one header each', () => {
+  a.__control.setNow(NOW);
+  const matches = [
+    liveMatch({ sport: 'Baseball', sportKey: 'baseball', sportLabel: 'Baseball', score: { found: true, team1Score: 1, team2Score: 0, detail: 'live' } }),
+    liveMatch({ sport: 'Hockey', sportKey: 'hockey', sportLabel: 'Hockey', team1: 'Bruins', team2: 'Rangers', score: { found: true, team1Score: 2, team2Score: 2, detail: 'P2' } })
+  ];
+  const html = a.renderSportGroups('live', 'Live', matches, a.renderLiveMatch);
+  assert.equal((html.match(/tm-bookie-sport-header/g) || []).length, 2);
+  assert.match(html, /Baseball/);
+  assert.match(html, /Hockey/);
+});
+
+test('formatGame renders a deterministic copy-tool block', () => {
+  const game = { sport: 'Baseball', matchName: 'Red Sox vs Yankees', competition: 'MLB', startTime: '18:00', markets: [{ name: 'Moneyline', bets: [{ desc: 'Red Sox', odds: '2/1', mult: 'x3.0', suspended: false }, { desc: 'Yankees', odds: '1/2', mult: 'x1.5', suspended: true }] }] };
+  const out = a.formatGame(game, false);
+  assert.match(out, /Sport:\s+Baseball/);
+  assert.match(out, /Market: Moneyline/);
+  assert.match(out, /\[SUSPENDED\]/);
+});

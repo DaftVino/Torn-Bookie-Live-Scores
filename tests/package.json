@@ -1,0 +1,14 @@
+{
+  "name": "torn-bookie-live-scores-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development-only test tooling for the Torn Bookie Live Scores userscript. NOT shipped with the userscript and adds no runtime dependencies.",
+  "scripts": {
+    "test": "node --test *.test.js",
+    "test:syntax": "node --check ../Torn_Bookie_Live_Scores.js",
+    "test:once": "node --test *.test.js",
+    "test:repeat": "node --test --test-concurrency=1 *.test.js"
+  },
+  "devDependencies": {},
+  "license": "MIT"
+}
