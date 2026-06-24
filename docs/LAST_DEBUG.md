@@ -2,9 +2,9 @@
 
 Source attachment:
 
-`C:\Users\jm3ak\.codex\attachments\62e06eb2-28f2-4b46-977f-18e73ad9154e\pasted-text.txt`
+`C:\Users\jm3ak\.codex\attachments\15222201-26db-475d-85d1-be1d104916dd\pasted-text.txt`
 
-Generated at: `2026-06-24T12:32:17.708Z`
+Generated at: `2026-06-24T13:16:34.326Z`
 
 Script: `Torn Bookie Live Scores Panel` `2.5.7`
 
@@ -16,10 +16,12 @@ Viewport: `1080x1751`, timezone `America/New_York`
 - Settings collapsed: `false`
 - Tools collapsed: `false`
 - Details open: `true`
-- Active details match: `Kinondoni MC v Namungo FC`
-- Live rows: `3`
-- Upcoming rows: `24`
+- Active details match: `Paul Jubb v Tomas Barrios`
+- Live rows: `16`
+- Upcoming rows: `11`
 - Total rows: `27`
+
+Step 1 has been completed and is intentionally left unchanged in the plan below.
 
 ## Match Mix
 
@@ -39,43 +41,66 @@ Initial source assignment:
 
 Score results:
 
-- Found scores: `2`
-- Unmatched live scores: `1`
+- Found scores: `9`
+- Unmatched live scores: `7`
+- Rows with no score lookup yet: `11` upcoming rows
 - Resolved events:
-  - `sofascore:lorenzo angelini|dali blanch|tennis|plovdiv 2026(challenger)|1782304200000`
-  - `sofascore:ugo humbert|jenson brooksby|tennis|lexus eastbourne open 2026(atp)|1782304200000`
+  - `sofascore:daniel michalski|jelle sels|tennis|plovdiv 2026(challenger)|1782306300000`
+  - `sofascore:dane sweeny|darwin blanch|tennis|wimbledon, qualification atp 2026(grand slam)|1782306900000`
+  - `sofascore:mackenzie mcdonald|roberto carballes baena|tennis|wimbledon, qualification atp 2026(grand slam)|1782306900000`
+  - `sofascore:alina korneeva|andrea lazaro garcia|tennis|wimbledon, qualification wta 2026(grand slam)|1782306900000`
+  - `sofascore:lorenzo angelini|dali blanch|tennis|plovdiv 2026(challenger)|1782304800000`
+  - `sofascore:julia riera|fiona crawley|tennis|wimbledon, qualification wta 2026(grand slam)|1782306900000`
+  - `sofascore:kaitlin quevedo|claire liu|tennis|wimbledon, qualification wta 2026(grand slam)|1782306000000`
+  - `sofascore:erika andreeva|kayla day|tennis|wimbledon, qualification wta 2026(grand slam)|1782306900000`
+  - `sofascore:ugo humbert|jenson brooksby|tennis|lexus eastbourne open 2026(atp)|1782306300000`
 
 ## Live Match Outcomes
 
 | Match | Status | Score result | Detail |
 |---|---|---|---|
-| Mathys Erhard v Inaki Montes | `1st Set` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, LiveScore/TheScore/BBC tennis 404 |
-| Lorenzo Angelini v Dali Blanch | `Not started` / `inprogress` | Found via SofaScore | Detail `scheduled`, no set score values |
-| Ugo Humbert v Jenson Brooksby | `Not started` / `inprogress` | Found via SofaScore | Detail `scheduled`, no set score values |
+| Dodoma Jiji FC v JKT Tanzania | `Not started` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, API-Football parser failed, BBC football events found but no confident match |
+| Fountain Gate FC v Mashujaa | `Not started` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, API-Football parser failed, BBC football events found but no confident match |
+| Young Africans v Azam FC | `Not started` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, API-Football parser failed, BBC football events found but no confident match |
+| Kinondoni MC v Namungo FC | `Not started` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, API-Football parser failed, BBC football events found but no confident match |
+| Pamba Jiji v Mbeya City | `Not started` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, API-Football parser failed, BBC football events found but no confident match |
+| Mathys Erhard v Inaki Montes | `2nd Set` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, LiveScore/TheScore/BBC tennis 404 |
+| Paul Jubb v Tomas Barrios | `1st Set` / `inprogress` | Not found | ESPN no events, SofaScore events found but no confident match, LiveScore/TheScore/BBC tennis 404 |
+| Daniel Michalski v Jelle Sels | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
+| Dane Sweeny v Darwin Blanch | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
+| Mackenzie McDonald v Roberto Carballes Baena | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
+| Alina Korneeva v Andrea Lazaro Garcia | `Not started` / `inprogress` | Found via SofaScore | Detail `scheduled`, no set score values |
+| Lorenzo Angelini v Dali Blanch | `2nd Set` / `inprogress` | Found via SofaScore | Score `0-1`, detail `2nd set` |
+| Julia Riera v Fiona Crawley | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
+| Kaitlin Quevedo v Claire Liu | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
+| Erika Andreeva v Kayla Day | `Not started` / `inprogress` | Found via SofaScore | Detail `scheduled`, no set score values |
+| Ugo Humbert v Jenson Brooksby | `1st Set` / `inprogress` | Found via SofaScore | Score `0-0`, detail `1st set` |
 
-The two SofaScore-resolved live rows still look suspicious because Torn marks them `inprogress` while provider detail is `scheduled` and the display status is `Not started`. Keep this as a status-normalization/match-state follow-up, separate from the provider lookup failure.
+Two SofaScore-resolved live rows still look suspicious because Torn marks them `inprogress` while provider detail is `scheduled` and the display status is `Not started`. Keep this as a status-normalization/match-state follow-up, separate from the provider lookup failure.
 
 ## Network Summary
 
 | Host | Last status | OK count | Error count | Notes |
 |---|---:|---:|---:|---|
-| `site.api.espn.com` | 200 | 17 | 0 | ESPN itself is reachable but current tennis ID coverage misses some rows |
+| `site.api.espn.com` | 200 | 18 | 0 | ESPN itself is reachable but current tennis ID coverage misses some rows; Tanzania football still falsely routes to `soccer_eng_pl` |
 | `www.sofascore.com` | 200 | 6 | 0 | Tennis and football boards reachable |
 | `prod-public-api.livescore.com` | 404 | 0 | 6 | Tennis date endpoint is failing |
 | `api.thescore.com` | 404 | 0 | 2 | Tennis events endpoint is failing |
-| `www.bbc.com` | 404 | 1 | 6 | Football page worked once, tennis score pages failed |
+| `www.bbc.com` | 404 | 3 | 6 | Football pages worked, tennis score pages failed |
 
 ## Provider Findings
 
 ### Tennis
 
-The latest capture confirms the earlier tennis diagnosis:
+The latest capture refines the tennis diagnosis:
 
-- ESPN tennis endpoint calls return HTTP 200, but the current hard-coded tournament ID list misses some competitions.
-- SofaScore can resolve at least some tennis rows, but not `Mathys Erhard v Inaki Montes`.
+- ESPN tennis endpoint calls return HTTP 200, but the current hard-coded tournament ID list still returns no events for the queried tennis rows.
+- SofaScore now resolves most live tennis rows: 9 live tennis rows are matched from SofaScore.
+- SofaScore still does not confidently match `Mathys Erhard v Inaki Montes` or `Paul Jubb v Tomas Barrios`.
 - LiveScore tennis endpoint returns 404 for `24/06/2026`, `23/06/2026`, and `25/06/2026`.
 - TheScore tennis endpoint returns 404 for the queried date window.
 - BBC tennis score pages return 404 for `2026-06-24`, `2026-06-23`, and `2026-06-25`.
+- Two SofaScore tennis matches resolve to provider status `scheduled` while Torn marks them live: `Alina Korneeva v Andrea Lazaro Garcia` and `Erika Andreeva v Kayla Day`.
 
 Observed competitions that matter for tennis repair:
 
@@ -87,19 +112,30 @@ Observed competitions that matter for tennis repair:
 Repair direction:
 
 1. Add sanitized candidate diagnostics when a provider reports events but no confident match. Include top candidate names, provider start time, tournament, status, confidence, and rejection reason.
-2. Add or verify ESPN tennis IDs for Plovdiv Challenger and Wimbledon qualifying events.
-3. Consider making SofaScore earlier or primary for tennis while ESPN ID coverage is incomplete.
+2. Add or verify ESPN tennis IDs for Plovdiv Challenger, Eastbourne, and Wimbledon qualifying events.
+3. Keep SofaScore early for tennis while ESPN ID coverage is incomplete; it is currently the only provider producing most live tennis scores in this capture.
 4. Disable or suppress LiveScore/TheScore/BBC tennis retries after known 404s unless those endpoints are re-probed and remapped.
+5. Add status diagnostics for Torn-live/provider-scheduled contradictions.
 
 ### Football
 
 Tanzania Premier League rows are assigned ESPN because the current soccer league matcher treats generic `Premier League` as English Premier League. The capture shows ESPN `soccer_eng_pl` requests for football rows whose competition is `Premier League 2025/2026(Tanzania 1)`.
 
+New context from the latest capture:
+
+- All five Tanzania Premier League live rows remain unmatched.
+- API-Football is attempted for all five rows but reports `parser failed for 2026-06-24, 2026-06-23, 2026-06-25`.
+- SofaScore football boards are reachable and return events, but no candidate passes confidence matching for these rows.
+- BBC football pages are reachable and return events, but no candidate passes confidence matching for these rows.
+- The debug report does not include enough API-Football response-shape detail to tell whether the parser failure is due to API errors, quota response body, empty response, or a shape change.
+
 Repair direction:
 
 1. Tighten ESPN soccer mapping so `english premier` or an explicit England/ENG context is required for `soccer_eng_pl`.
 2. Route unmapped soccer leagues to SofaScore and API-Football rather than ESPN.
-3. Add a regression test for `Premier League 2025/2026(Tanzania 1)` so it does not map to `soccer_eng_pl`.
+3. Add API-Football parser diagnostics: response type, top-level keys, `results`, `errors` keys, candidate count, and quota-header presence.
+4. Add candidate diagnostics for SofaScore/BBC football "events found; no confident team match" so the mismatch can be distinguished from provider coverage failure.
+5. Add a regression test for `Premier League 2025/2026(Tanzania 1)` so it does not map to `soccer_eng_pl`.
 
 ## Repair Plan
 
@@ -163,6 +199,7 @@ Current behavior from code:
   - `x-requests-used`
   - `x-requests-last`
 - The Odds API quota display currently only shows `Remaining quota`, and it can show an empty/placeholder value before any successful odds pull or when the provider omits the header.
+- The latest debug report still shows `apiSportsQuota: {}` even after API-Football was attempted and reported parser failures, so quota display cannot depend only on successful parsed boards.
 
 User requirement:
 
@@ -193,29 +230,41 @@ Repair direction:
 
 ### Step 4 - Tennis Score Matching
 
-The latest capture confirms:
+The latest capture refines:
 
-- ESPN tennis endpoint calls return HTTP 200 but current hard-coded tournament IDs miss some competitions.
-- SofaScore can resolve some tennis rows, but not all.
+- ESPN tennis endpoint calls return HTTP 200 but current hard-coded tournament IDs still return no events for the queried rows.
+- SofaScore resolves most live tennis rows in this capture: 9 live tennis rows matched through SofaScore.
+- The remaining live tennis lookup misses are `Mathys Erhard v Inaki Montes` and `Paul Jubb v Tomas Barrios`; both have SofaScore events available but no confident candidate match.
 - LiveScore, TheScore, and BBC tennis endpoints are producing repeated 404s.
+- `Alina Korneeva v Andrea Lazaro Garcia` and `Erika Andreeva v Kayla Day` resolve through SofaScore, but provider status is `scheduled` while Torn marks them live.
 
 Repair direction:
 
 1. Add sanitized candidate diagnostics when a provider reports events but no confident match. Include top candidate names, provider start time, tournament, status, confidence, and rejection reason.
-2. Add or verify ESPN tennis IDs for Plovdiv Challenger and Wimbledon qualifying events.
-3. Consider making SofaScore earlier or primary for tennis while ESPN ID coverage is incomplete.
+2. Add or verify ESPN tennis IDs for Plovdiv Challenger, Eastbourne, and Wimbledon qualifying events.
+3. Keep SofaScore early for tennis while ESPN ID coverage is incomplete, because it is currently the only provider resolving most live tennis rows.
 4. Disable or suppress LiveScore/TheScore/BBC tennis retries after known 404s unless those endpoints are re-probed and remapped.
-5. Add fixture tests for the observed competitions listed above.
+5. Add status diagnostics for Torn-live/provider-scheduled contradictions.
+6. Add fixture tests for the observed competitions listed above.
 
 ### Step 5 - Football Provider Routing
 
 The latest capture shows Tanzania Premier League rows routed to ESPN English Premier League (`soccer_eng_pl`). That is a false mapping caused by the generic `Premier League` text.
 
+Additional latest-report context:
+
+- All five Tanzania Premier League live rows remain unmatched.
+- API-Football is attempted but reports parser failures for `2026-06-24`, `2026-06-23`, and `2026-06-25`.
+- SofaScore and BBC football both return events, but no candidate passes confidence matching.
+- The debug report does not yet expose enough API-Football response-shape detail to distinguish API errors, quota responses, empty bodies, and parser drift.
+
 Repair direction:
 
 1. Tighten ESPN soccer mapping so English Premier League requires `english premier`, `england`, `eng.1`, or another explicit England context.
 2. Route unmapped soccer leagues to SofaScore and API-Football rather than ESPN.
-3. Add a regression test for `Premier League 2025/2026(Tanzania 1)` so it does not map to `soccer_eng_pl`.
+3. Add API-Football parser diagnostics: response type, top-level keys, `results`, `errors` keys, candidate count, and quota-header presence.
+4. Add candidate diagnostics for SofaScore/BBC football "events found; no confident team match."
+5. Add a regression test for `Premier League 2025/2026(Tanzania 1)` so it does not map to `soccer_eng_pl`.
 
 ### Step 6 - Debug Report Improvements
 
@@ -223,8 +272,9 @@ Repair direction:
 
 1. Add scroll metrics: panel/content dimensions, `scrollTop`, `scrollHeight`, `clientHeight`, and settings offset.
 2. Add provider candidate diagnostics for "events found; no confident team match."
-3. Add quota metadata for each BYOK provider without exposing keys/tokens.
-4. Keep provider raw responses out of the debug report.
+3. Add parser-failure diagnostics for provider responses: response type, top-level keys, result counts, error-key presence, and provider name.
+4. Add quota metadata for each BYOK provider without exposing keys/tokens, including whether quota headers were absent.
+5. Keep provider raw responses out of the debug report.
 
 ### Step 7 - Verification
 

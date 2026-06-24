@@ -6503,6 +6503,8 @@
   width: ${PANEL_WIDTH}px;
   max-height: calc(100vh - 120px);
   z-index: 999999;
+  display: flex;
+  flex-direction: column;
   background: var(--tm-bg);
   color: var(--tm-text);
   border: 1px solid var(--tm-border);
@@ -6664,6 +6666,7 @@
   padding: 10px 12px;
   background: var(--tm-bg-3);
   border-bottom: 3px solid var(--tm-accent);
+  flex-shrink: 0;
 }
 
 #${PANEL_ID}.tm-bookie-panel-hidden .tm-bookie-header {
@@ -6857,8 +6860,11 @@
 }
 
 #${PANEL_ID} .tm-bookie-content {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  max-height: calc(100vh - 170px);
+  padding-bottom: 14px;
+  box-sizing: border-box;
   background: var(--tm-bg);
   scrollbar-width: thin;
   scrollbar-color: var(--tm-accent) var(--tm-bg-3);
