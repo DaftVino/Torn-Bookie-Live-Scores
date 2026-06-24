@@ -189,6 +189,7 @@
   // -- API-Sports (api-sports.io) BYOK configuration ----------------------------
 
   const APISPORTS_KEY_STORE = 'tmBookieApiSportsKey';
+  const BYOK_USAGE_LEDGER_STORE = 'tmBookieByokUsageLedger';
 
   function getApiSportsKey() {
     try { return GM_getValue(APISPORTS_KEY_STORE, '') || ''; }
@@ -555,7 +556,9 @@
   };
 
   // Verified leagueIds for the per-tournament tennis/all/scoreboard endpoint.
-  // eventId is always ${id}-${currentYear}. Add others as confirmed.
+  // eventId is always ${id}-${currentYear}. A 2026-06-24 probe returned Wimbledon
+  // qualifying, Eastbourne, Mallorca, and Bad Homburg. Plovdiv Challenger was not
+  // present in ESPN's board for that date, so SofaScore remains first for tennis.
   const TENNIS_LEAGUE_IDS = [
     188, // Wimbledon
     444, // Eastbourne
@@ -587,7 +590,7 @@
     // football/soccer excluded: prod-public-api.livescore.com/v1/api/app/date/soccer/... returns HTTP 404 as of 2026-06-20
     hockey:               'hockey',
     // basketball excluded: prod-public-api.livescore.com/v1/api/app/date/basketball/... returns HTTP 404 as of 2026-06-20
-    tennis:               'tennis',
+    // tennis excluded: prod-public-api.livescore.com/v1/api/app/date/tennis/... returns HTTP 404 as of 2026-06-24
     cricket:              'cricket',
     rugby:                'rugby',
     'rugby-league':       'rugby',
@@ -605,7 +608,7 @@
     // football/soccer excluded: api.thescore.com/soccer/events returns HTTP 404 as of 2026-06-20
     hockey:              'hockey',
     // basketball excluded: api.thescore.com/basketball/events returns HTTP 404 as of 2026-06-20
-    tennis:              'tennis',
+    // tennis excluded: api.thescore.com/tennis/events returns HTTP 404 as of 2026-06-24
     cricket:             'cricket',
     rugby:               'rugby',
     'american-football': 'football'
@@ -619,8 +622,8 @@
     soccer:        'football',
     cricket:       'cricket',
     rugby:         'rugby-union',
-    'rugby-league':'rugby-league',
-    tennis:        'tennis'
+    'rugby-league':'rugby-league'
+    // tennis excluded: BBC tennis score pages return HTTP 404 as of 2026-06-24
   };
 
   // -- PandaScore esports mapping (provider integration follows in later phase) --
@@ -737,6 +740,7 @@
   let latestOddsQuota     = null;
   let latestPandaQuota    = null;
   let latestApiSportsQuota = {};
+  const latestByokQuota = {};
 
   let activeDetailsMatchKey  = null;
   let activeDetailsFallbackMatch = null;
@@ -819,6 +823,281 @@
       return out;
     }
     return sanitizeDebugText(value);
+  }
+
+  function byokQuotaKey(providerKey, familyKey = 'default') {
+    return `${String(providerKey || '').toLowerCase()}:${String(familyKey || 'default').toLowerCase()}`;
+  }
+
+  function normalizeByokUsageEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const at = Number(entry.at);
+    const requestCost = Math.max(0, Number(entry.requestCost ?? 1) || 0);
+    const providerKey = String(entry.providerKey || '').toLowerCase();
+    const familyKey = String(entry.familyKey || 'default');
+    if (!Number.isFinite(at) || at <= 0 || !providerKey || !familyKey) return null;
+    return {
+      at,
+      providerKey,
+      familyKey,
+      label: sanitizeDebugText(entry.label || familyKey),
+      requestCost,
+      outcome: sanitizeDebugText(entry.outcome || 'unknown')
+    };
+  }
+
+  function loadByokUsageLedger(now = Date.now()) {
+    try {
+      const raw = GM_getValue(BYOK_USAGE_LEDGER_STORE, []);
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const cutoff = now - DAY_MS;
+      return (Array.isArray(parsed) ? parsed : [])
+        .map(normalizeByokUsageEntry)
+        .filter(entry => entry && entry.at >= cutoff);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveByokUsageLedger(entries) {
+    try {
+      GM_setValue(BYOK_USAGE_LEDGER_STORE, entries.slice(-500));
+    } catch (_) {}
+  }
+
+  function clearByokUsageLedger() {
+    try { GM_deleteValue(BYOK_USAGE_LEDGER_STORE); }
+    catch (_) {}
+  }
+
+  function recordByokUsage({ providerKey, familyKey = 'default', label = '', requestCost = 1, outcome = 'unknown' } = {}) {
+    const entry = normalizeByokUsageEntry({
+      at: Date.now(),
+      providerKey,
+      familyKey,
+      label: label || familyKey,
+      requestCost,
+      outcome
+    });
+    if (!entry) return null;
+    const ledger = loadByokUsageLedger(entry.at);
+    ledger.push(entry);
+    saveByokUsageLedger(ledger);
+    return entry;
+  }
+
+  function getByokUsageSummary(providerKeys = [], now = Date.now()) {
+    const wanted = new Set((Array.isArray(providerKeys) ? providerKeys : [providerKeys]).map(key => String(key || '').toLowerCase()).filter(Boolean));
+    const summaries = {};
+    for (const entry of loadByokUsageLedger(now)) {
+      if (wanted.size && !wanted.has(entry.providerKey)) continue;
+      const key = byokQuotaKey(entry.providerKey, entry.familyKey);
+      const prev = summaries[key] || {
+        providerKey: entry.providerKey,
+        familyKey: entry.familyKey,
+        label: entry.label || entry.familyKey,
+        requests: 0,
+        cost: 0,
+        ok: 0,
+        error: 0,
+        lastAt: 0
+      };
+      prev.requests += 1;
+      prev.cost += entry.requestCost;
+      if (entry.outcome === 'ok') prev.ok += 1;
+      else prev.error += 1;
+      prev.lastAt = Math.max(prev.lastAt, entry.at);
+      summaries[key] = prev;
+    }
+    return summaries;
+  }
+
+  function isQuotaExhaustionText(value) {
+    const text = String(value || '').toLowerCase();
+    if (!text) return false;
+    return /(?:out of|exceed|exceeded|exhaust|quota|rate.?limit|too many requests|payment required|subscription)/i.test(text)
+      && /(?:quota|rate.?limit|token|request|credit|limit|too many requests|exceed|exhaust)/i.test(text);
+  }
+
+  function isZeroQuotaValue(value) {
+    if (value == null || value === '') return false;
+    const n = Number(value);
+    return Number.isFinite(n) && n <= 0;
+  }
+
+  function syncProviderQuotaCompat(state) {
+    const local = getByokUsageSummary([state.providerKey])[byokQuotaKey(state.providerKey, state.familyKey)] || { requests: 0, cost: 0 };
+    if (state.providerKey === 'apisports' || state.providerKey === 'apifootball') {
+      latestApiSportsQuota[state.label] = {
+        dayRemaining: state.dayRemaining ?? null,
+        minRemaining: state.minRemaining ?? null,
+        localRequests24h: local.requests,
+        headersAbsent: !!state.headersAbsent,
+        exhausted: !!state.exhausted,
+        outOfTokensAt: state.outOfTokensAt || null,
+        updatedAt: state.updatedAt || null
+      };
+    } else if (state.providerKey === 'pandascore') {
+      latestPandaQuota = {
+        remaining: state.hourlyRemaining ?? '',
+        hourlyRemaining: state.hourlyRemaining ?? null,
+        localRequests24h: local.requests,
+        headersAbsent: !!state.headersAbsent,
+        exhausted: !!state.exhausted,
+        outOfTokensAt: state.outOfTokensAt || null,
+        updatedAt: state.updatedAt || null
+      };
+    } else if (state.providerKey === 'theoddsapi') {
+      latestOddsQuota = {
+        remaining: state.remaining ?? '',
+        used: state.used ?? '',
+        last: state.last ?? '',
+        localCredits24h: local.cost,
+        headersAbsent: !!state.headersAbsent,
+        exhausted: !!state.exhausted,
+        outOfTokensAt: state.outOfTokensAt || null,
+        updatedAt: state.updatedAt || null
+      };
+    }
+  }
+
+  function updateByokQuotaState({ providerKey, familyKey = 'default', label = '', headers = {}, status = null, errorText = '', requestCost = 1, outcome = 'unknown' } = {}) {
+    const normalizedProvider = String(providerKey || '').toLowerCase();
+    const normalizedFamily = String(familyKey || 'default');
+    if (!normalizedProvider) return null;
+    const key = byokQuotaKey(normalizedProvider, normalizedFamily);
+    const previous = latestByokQuota[key] || {};
+    const state = {
+      ...previous,
+      providerKey: normalizedProvider,
+      familyKey: normalizedFamily,
+      label: label || previous.label || normalizedFamily,
+      updatedAt: Date.now(),
+      lastStatus: status,
+      lastOutcome: outcome,
+      requestCost
+    };
+    const lowerHeaders = {};
+    Object.entries(headers || {}).forEach(([hKey, hValue]) => { lowerHeaders[String(hKey).toLowerCase()] = hValue; });
+
+    if (normalizedProvider === 'apisports' || normalizedProvider === 'apifootball') {
+      if (lowerHeaders['x-ratelimit-requests-remaining'] != null) state.dayRemaining = String(lowerHeaders['x-ratelimit-requests-remaining']);
+      if (lowerHeaders['x-ratelimit-remaining'] != null) state.minRemaining = String(lowerHeaders['x-ratelimit-remaining']);
+      state.headersAbsent = lowerHeaders['x-ratelimit-requests-remaining'] == null && lowerHeaders['x-ratelimit-remaining'] == null;
+    } else if (normalizedProvider === 'pandascore') {
+      if (lowerHeaders['x-rate-limit-remaining'] != null) state.hourlyRemaining = String(lowerHeaders['x-rate-limit-remaining']);
+      state.headersAbsent = lowerHeaders['x-rate-limit-remaining'] == null;
+    } else if (normalizedProvider === 'theoddsapi') {
+      if (lowerHeaders['x-requests-remaining'] != null) state.remaining = String(lowerHeaders['x-requests-remaining']);
+      if (lowerHeaders['x-requests-used'] != null) state.used = String(lowerHeaders['x-requests-used']);
+      if (lowerHeaders['x-requests-last'] != null) state.last = String(lowerHeaders['x-requests-last']);
+      state.headersAbsent = lowerHeaders['x-requests-remaining'] == null && lowerHeaders['x-requests-used'] == null && lowerHeaders['x-requests-last'] == null;
+    }
+
+    const zeroRemaining = isZeroQuotaValue(state.dayRemaining) || isZeroQuotaValue(state.hourlyRemaining) || isZeroQuotaValue(state.remaining);
+    const exhausted = Number(status) === 429 || zeroRemaining || isQuotaExhaustionText(errorText);
+    if (exhausted) {
+      state.exhausted = true;
+      state.outOfTokensAt = Date.now();
+    } else if (state.exhausted && outcome === 'ok') {
+      state.exhausted = false;
+      state.outOfTokensAt = null;
+    }
+    latestByokQuota[key] = state;
+    syncProviderQuotaCompat(state);
+    return state;
+  }
+
+  function isByokQuotaExhausted(providerKey, familyKey = 'default') {
+    return !!latestByokQuota[byokQuotaKey(providerKey, familyKey)]?.exhausted;
+  }
+
+  function trackByokRequest(providerKey, familyKey, label, requestCost, fetchFn) {
+    return () => fetchFn()
+      .then(response => {
+        recordByokUsage({ providerKey, familyKey, label, requestCost, outcome: 'ok' });
+        updateByokQuotaState({
+          providerKey,
+          familyKey,
+          label,
+          headers: response?.headers || {},
+          status: response?.status || 200,
+          requestCost,
+          outcome: 'ok'
+        });
+        return response;
+      })
+      .catch(error => {
+        recordByokUsage({ providerKey, familyKey, label, requestCost, outcome: 'error' });
+        updateByokQuotaState({
+          providerKey,
+          familyKey,
+          label,
+          headers: error?.headers || {},
+          status: error?.status || null,
+          errorText: `${error?.message || ''} ${error?.responseText || ''} ${JSON.stringify(error?.body || '')}`,
+          requestCost,
+          outcome: 'error'
+        });
+        throw error;
+      });
+  }
+
+  function getByokQuotaDisplayRows(providerKeys = []) {
+    const keys = (Array.isArray(providerKeys) ? providerKeys : [providerKeys]).map(key => String(key || '').toLowerCase()).filter(Boolean);
+    const wanted = new Set(keys);
+    const usage = getByokUsageSummary(keys);
+    const rowsByKey = {};
+    for (const [key, summary] of Object.entries(usage)) {
+      rowsByKey[key] = { ...summary, state: latestByokQuota[key] || null };
+    }
+    for (const [key, state] of Object.entries(latestByokQuota)) {
+      if (wanted.size && !wanted.has(state.providerKey)) continue;
+      rowsByKey[key] = { ...(rowsByKey[key] || {}), state, label: state.label, providerKey: state.providerKey, familyKey: state.familyKey };
+    }
+    return Object.values(rowsByKey).sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+  }
+
+  function formatByokLocalUsage(row, unitLabel) {
+    const usage = row?.requests != null ? row : (getByokUsageSummary([row?.state?.providerKey || ''])[byokQuotaKey(row?.state?.providerKey, row?.state?.familyKey)] || {});
+    const value = unitLabel === 'credit' ? (usage.cost || 0) : (usage.requests || 0);
+    const unit = `${unitLabel}${value === 1 ? '' : 's'}`;
+    return `Local 24h: ${value} ${unit}`;
+  }
+
+  function formatByokQuotaRow(row) {
+    const state = row.state || {};
+    const providerKey = state.providerKey || row.providerKey || '';
+    const label = state.label || row.label || row.familyKey || 'Provider';
+    const unit = providerKey === 'theoddsapi' ? 'credit' : 'request';
+    if (state.exhausted) {
+      return `${label}: Out of Tokens; ${formatByokLocalUsage(row, unit)}`;
+    }
+    const parts = [];
+    if (state.dayRemaining != null) parts.push(`Day remaining: ${state.dayRemaining}`);
+    if (state.minRemaining != null) parts.push(`Per-min remaining: ${state.minRemaining}`);
+    if (state.hourlyRemaining != null) parts.push(`Hourly remaining: ${state.hourlyRemaining}`);
+    if (state.remaining != null && state.remaining !== '') parts.push(`Remaining: ${state.remaining}`);
+    if (state.used != null && state.used !== '') parts.push(`Used: ${state.used}`);
+    if (state.last != null && state.last !== '') parts.push(`Last cost: ${state.last}`);
+    if (!parts.length) parts.push(state.updatedAt ? 'Provider quota not reported' : 'Not pulled yet');
+    parts.push(formatByokLocalUsage(row, unit));
+    return `${label}: ${parts.join('; ')}`;
+  }
+
+  function renderByokQuotaBlock(providerKeys, emptyLabel = 'Not pulled yet') {
+    const rows = getByokQuotaDisplayRows(providerKeys);
+    if (!rows.length) return `<div class="tm-bookie-odds-quota">${escapeHtml(emptyLabel)}</div>`;
+    return `<div class="tm-bookie-odds-quota">${rows.map(row => `<div>${escapeHtml(formatByokQuotaRow(row))}</div>`).join('')}</div>`;
+  }
+
+  function getByokUsageDebugSummary() {
+    return sanitizeDebugValue(Object.fromEntries(Object.entries(getByokUsageSummary(['apisports', 'apifootball', 'pandascore', 'theoddsapi']))
+      .map(([key, value]) => [key, value])));
+  }
+
+  function getByokQuotaDebugState() {
+    return sanitizeDebugValue(Object.fromEntries(Object.entries(latestByokQuota)));
   }
 
   function getUrlHostPath(url) {
@@ -932,7 +1211,61 @@
         detail: score.detail || '',
         unmatched: !!score.unmatched,
         providersTried: score.providersTried || [],
-        providerErrors: score.providerErrors || []
+        providerErrors: score.providerErrors || [],
+        providerDiagnostics: score.providerDiagnostics || score.candidateDiagnostics || [],
+        parserDiagnostics: score.parserDiagnostics || [],
+        statusDiagnostics: score.statusDiagnostics || []
+      }
+    });
+  }
+
+  function elementRectMetrics(element) {
+    if (!element || typeof element.getBoundingClientRect !== 'function') {
+      return { top: null, bottom: null, width: null, height: null };
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+      top: Number.isFinite(rect.top) ? Math.round(rect.top) : null,
+      bottom: Number.isFinite(rect.bottom) ? Math.round(rect.bottom) : null,
+      width: Number.isFinite(rect.width) ? Math.round(rect.width) : null,
+      height: Number.isFinite(rect.height) ? Math.round(rect.height) : null
+    };
+  }
+
+  function elementNumberMetric(element, key) {
+    const value = Number(element?.[key]);
+    return Number.isFinite(value) ? Math.round(value) : null;
+  }
+
+  function getPanelScrollMetrics() {
+    const panel = document.getElementById(PANEL_ID);
+    const content = panel?.querySelector?.('.tm-bookie-content') || null;
+    const settings = panel?.querySelector?.('.tm-bookie-settings-group') || panel?.querySelector?.('.tm-bookie-settings-body') || null;
+    const contentRect = elementRectMetrics(content);
+    const settingsRect = elementRectMetrics(settings);
+    const settingsOffsetFromContentTop = content && settings && settingsRect.top != null && contentRect.top != null
+      ? Math.round(settingsRect.top - contentRect.top + (Number(content.scrollTop) || 0))
+      : elementNumberMetric(settings, 'offsetTop');
+    return sanitizeDebugValue({
+      panel: {
+        present: !!panel,
+        hidden: !!isPanelHidden,
+        rect: elementRectMetrics(panel),
+        clientHeight: elementNumberMetric(panel, 'clientHeight'),
+        scrollHeight: elementNumberMetric(panel, 'scrollHeight')
+      },
+      content: {
+        present: !!content,
+        rect: contentRect,
+        scrollTop: elementNumberMetric(content, 'scrollTop'),
+        scrollHeight: elementNumberMetric(content, 'scrollHeight'),
+        clientHeight: elementNumberMetric(content, 'clientHeight')
+      },
+      settings: {
+        present: !!settings,
+        rect: settingsRect,
+        offsetTop: elementNumberMetric(settings, 'offsetTop'),
+        offsetFromContentTop: settingsOffsetFromContentTop
       }
     });
   }
@@ -988,6 +1321,8 @@
         hasPandaScoreToken: hasPandaScoreToken(),
         hasApiSportsKey: hasApiSportsKey(),
         apiSportsQuota: latestApiSportsQuota,
+        byokQuota: getByokQuotaDebugState(),
+        byokLocalUsage24h: getByokUsageDebugSummary(),
         sofascoreTokenAgeMs: getSofascoreTokenTimestamp() ? Date.now() - getSofascoreTokenTimestamp() : null,
         sofascoreLastRefreshMs: (() => {
           try { return Number(GM_getValue(SOFASCORE_XRW_REFRESH_TS_STORE, 0)) || 0; }
@@ -1002,7 +1337,8 @@
         activeDetailsOpen: !!activeDetailsMatchKey,
         activeDetailsMatch: activeMatch ? debugMatchSummary(activeMatch) : null,
         liveCount: latestRenderableMatches.filter(match => match.sectionType === 'live').length,
-        upcomingCount: latestRenderableMatches.filter(match => match.sectionType === 'upcoming').length
+        upcomingCount: latestRenderableMatches.filter(match => match.sectionType === 'upcoming').length,
+        scrollMetrics: getPanelScrollMetrics()
       },
       matches: latestRenderableMatches.slice(0, 50).map(debugMatchSummary),
       caches: {
@@ -1320,7 +1656,14 @@
           recordDebugEvent('network', { host, path: urlPath, status: response.status, ok, kind: 'http', ms, bytes: (response.responseText || '').length, contentType: headers['content-type'] || '' });
           updateNetworkStats(host, { status: response.status, kind: 'http', ms, ok });
           if (!ok) {
-            reject(new Error(`${safeLabel} failed with status ${response.status}`));
+            let errorBody = response.responseText || '';
+            try { errorBody = JSON.parse(response.responseText); } catch (_) {}
+            const error = new Error(`${safeLabel} failed with status ${response.status}`);
+            error.status = response.status;
+            error.headers = headers;
+            error.body = errorBody;
+            error.responseText = typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody);
+            reject(error);
             return;
           }
           let data;
@@ -1330,7 +1673,7 @@
             data = response.responseText;
           }
           captureResponseShape(host, data);
-          resolve({ data, headers });
+          resolve({ data, headers, status: response.status });
         },
         onerror: () => {
           const ms = Date.now() - startMs;
@@ -1375,7 +1718,8 @@
 
   function normalizeName(value) {
     return String(value || '')
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/&/g, 'and')
       .replace(/\./g, '')
@@ -1648,22 +1992,74 @@
     return union > 0 && inter > 0 ? Math.round((inter / union) * 70) : 0;
   }
 
+  function calcIndividualNameMatchScore(a, b, sportKey = '') {
+    if (sportKey !== 'tennis') return 0;
+    const na = normalizeName(a);
+    const nb = normalizeName(b);
+    if (!na || !nb || na === nb) return 0;
+    const tokensA = na.split(' ').filter(Boolean);
+    const tokensB = nb.split(' ').filter(Boolean);
+    const [shortToks, longToks] = tokensA.length <= tokensB.length ? [tokensA, tokensB] : [tokensB, tokensA];
+    if (shortToks.length < 2) return 0;
+
+    const sameMultiset = (left, right) => {
+      if (left.length !== right.length || left.length < 2) return false;
+      const aSorted = [...left].sort();
+      const bSorted = [...right].sort();
+      return aSorted.every((token, idx) => token === bSorted[idx]);
+    };
+    const adjacentMergeVariants = tokens => {
+      const variants = [tokens];
+      for (let idx = 0; idx < tokens.length - 1; idx++) {
+        variants.push([
+          ...tokens.slice(0, idx),
+          `${tokens[idx]}${tokens[idx + 1]}`,
+          ...tokens.slice(idx + 2)
+        ]);
+      }
+      return variants;
+    };
+
+    // Tennis providers often disagree on personal-name order or hyphen spacing:
+    // Torn: "Soon-Woo Kwon"; provider: "Kwon Soonwoo" / "Kwon Soon-woo".
+    // Keep this individual-sport-only so club/team containment stays conservative.
+    for (const variantA of adjacentMergeVariants(tokensA)) {
+      for (const variantB of adjacentMergeVariants(tokensB)) {
+        if (sameMultiset(variantA, variantB)) return 92;
+      }
+    }
+
+    if (longToks.length <= shortToks.length) return 0;
+    for (let idx = 0; idx < shortToks.length; idx++) {
+      if (longToks[idx] !== shortToks[idx]) return 0;
+    }
+    return 92;
+  }
+
+  function calcContestantMatchScore(a, b, sportKey = '') {
+    return Math.max(
+      calcTeamMatchScore(a, b),
+      calcIndividualNameMatchScore(a, b, sportKey)
+    );
+  }
+
   function matchTeamPair(match, home, away, homeShort = '', awayShort = '') {
+    const sportKey = match?.sportKey || match?.sportAlias || slugify(match?.sport || '');
     const t1h = Math.max(
-      calcTeamMatchScore(match.team1, home),
-      homeShort ? calcTeamMatchScore(match.team1, homeShort) : 0
+      calcContestantMatchScore(match.team1, home, sportKey),
+      homeShort ? calcContestantMatchScore(match.team1, homeShort, sportKey) : 0
     );
     const t1a = Math.max(
-      calcTeamMatchScore(match.team1, away),
-      awayShort ? calcTeamMatchScore(match.team1, awayShort) : 0
+      calcContestantMatchScore(match.team1, away, sportKey),
+      awayShort ? calcContestantMatchScore(match.team1, awayShort, sportKey) : 0
     );
     const t2h = Math.max(
-      calcTeamMatchScore(match.team2, home),
-      homeShort ? calcTeamMatchScore(match.team2, homeShort) : 0
+      calcContestantMatchScore(match.team2, home, sportKey),
+      homeShort ? calcContestantMatchScore(match.team2, homeShort, sportKey) : 0
     );
     const t2a = Math.max(
-      calcTeamMatchScore(match.team2, away),
-      awayShort ? calcTeamMatchScore(match.team2, awayShort) : 0
+      calcContestantMatchScore(match.team2, away, sportKey),
+      awayShort ? calcContestantMatchScore(match.team2, awayShort, sportKey) : 0
     );
 
     const scoreAsHome = Math.min(t1h, t2a); // team1=home, team2=away
@@ -1808,6 +2204,9 @@
       parseFailures: [],
       eventCount: 0,
       resolution: null,
+      candidateDiagnostics: [],
+      statusDiagnostics: [],
+      parserDiagnostics: [],
       diagnostics: []
     };
   }
@@ -1817,6 +2216,9 @@
     target.candidates.push(...(partial.candidates || []));
     target.errors.push(...(partial.errors || []));
     target.parseFailures.push(...(partial.parseFailures || []));
+    target.candidateDiagnostics.push(...(partial.candidateDiagnostics || []));
+    target.statusDiagnostics.push(...(partial.statusDiagnostics || []));
+    target.parserDiagnostics.push(...(partial.parserDiagnostics || []));
     target.eventCount += Number(partial.eventCount || 0);
     target.diagnostics.push(...(partial.diagnostics || []));
     return target;
@@ -1851,10 +2253,11 @@
   function scoreTeamOrientation(match, candidate) {
     const homeShort = candidate.homeShortName || candidate.homeCode || '';
     const awayShort = candidate.awayShortName || candidate.awayCode || '';
-    const t1h = Math.max(calcTeamMatchScore(match.team1, candidate.homeName), homeShort ? calcTeamMatchScore(match.team1, homeShort) : 0);
-    const t1a = Math.max(calcTeamMatchScore(match.team1, candidate.awayName), awayShort ? calcTeamMatchScore(match.team1, awayShort) : 0);
-    const t2h = Math.max(calcTeamMatchScore(match.team2, candidate.homeName), homeShort ? calcTeamMatchScore(match.team2, homeShort) : 0);
-    const t2a = Math.max(calcTeamMatchScore(match.team2, candidate.awayName), awayShort ? calcTeamMatchScore(match.team2, awayShort) : 0);
+    const sportKey = match?.sportKey || match?.sportAlias || slugify(match?.sport || '');
+    const t1h = Math.max(calcContestantMatchScore(match.team1, candidate.homeName, sportKey), homeShort ? calcContestantMatchScore(match.team1, homeShort, sportKey) : 0);
+    const t1a = Math.max(calcContestantMatchScore(match.team1, candidate.awayName, sportKey), awayShort ? calcContestantMatchScore(match.team1, awayShort, sportKey) : 0);
+    const t2h = Math.max(calcContestantMatchScore(match.team2, candidate.homeName, sportKey), homeShort ? calcContestantMatchScore(match.team2, homeShort, sportKey) : 0);
+    const t2a = Math.max(calcContestantMatchScore(match.team2, candidate.awayName, sportKey), awayShort ? calcContestantMatchScore(match.team2, awayShort, sportKey) : 0);
     const asHome = Math.min(t1h, t2a);
     const asAway = Math.min(t1a, t2h);
     return asHome >= asAway
@@ -1954,6 +2357,57 @@
     };
   }
 
+  function isCandidateScheduledStatus(status) {
+    const token = normalizeStatusToken(status);
+    return ['scheduled', 'upcoming', 'notstarted', 'pre', 'pregame', 'statusscheduled'].includes(token);
+  }
+
+  function candidateDiagnostic(match, candidate, scored) {
+    const start = candidate?.normalizedStartMs ? new Date(candidate.normalizedStartMs).toISOString() : '';
+    return sanitizeDebugValue({
+      providerKey: candidate?.providerKey || '',
+      providerEventId: candidate?.providerEventId || '',
+      teams: `${candidate?.homeName || ''} v ${candidate?.awayName || ''}`,
+      start,
+      tournament: candidate?.competitionName || '',
+      status: candidate?.status || '',
+      confidence: scored?.team?.confidence || 0,
+      team1Score: scored?.team?.team1Score || 0,
+      team2Score: scored?.team?.team2Score || 0,
+      overallScore: scored?.score || 0,
+      reason: scored?.reason || 'unknown',
+      target: `${match?.team1 || ''} v ${match?.team2 || ''}`
+    });
+  }
+
+  function topCandidateDiagnostics(match, candidates, options = {}) {
+    return (candidates || [])
+      .map(candidate => ({
+        candidate,
+        scored: scoreCandidate(match, candidate, options)
+      }))
+      .sort((a, b) => (b.scored.score || 0) - (a.scored.score || 0))
+      .slice(0, 5)
+      .map(item => candidateDiagnostic(match, item.candidate, item.scored));
+  }
+
+  function recordStatusDiagnostics(match, providerKey, resolution, result) {
+    const candidate = resolution?.candidate;
+    if (!candidate || !isActuallyLive(match) || !isCandidateScheduledStatus(candidate.status)) return;
+    const diagnostic = sanitizeDebugValue({
+      match: match?.name || `${match?.team1 || ''} v ${match?.team2 || ''}`,
+      providerKey,
+      providerEventId: candidate.providerEventId || '',
+      providerStatus: candidate.status || '',
+      providerStart: candidate.normalizedStartMs ? new Date(candidate.normalizedStartMs).toISOString() : '',
+      tornStatus: match?.status || '',
+      tornRawStatus: match?.rawStatus || '',
+      sectionType: match?.sectionType || ''
+    });
+    result.statusDiagnostics.push(diagnostic);
+    recordDebugEvent('score-status-contradiction', diagnostic);
+  }
+
   function resolvedEventCacheKey(providerKey, match) {
     return `resolved-event:${providerKey}:${makeMatchKey(match)}`;
   }
@@ -2025,6 +2479,7 @@
               score: cachedScore.score
             };
             putResolvedEvent(providerKey, match, result.resolution);
+            recordStatusDiagnostics(match, providerKey, result.resolution, result);
             return result;
           }
         }
@@ -2033,15 +2488,27 @@
       if (best.resolution) {
         result.resolution = best.resolution;
         putResolvedEvent(providerKey, match, best.resolution);
+        recordStatusDiagnostics(match, providerKey, best.resolution, result);
         return result;
       }
       if (best.ambiguous) result.ambiguous = true;
+      if (stepCandidates.length) {
+        const diagnostics = topCandidateDiagnostics(match, stepCandidates, options);
+        result.candidateDiagnostics.push(...diagnostics);
+        recordDebugEvent('provider-candidate-diagnostics', {
+          match: match?.name || '',
+          providerKey,
+          queriedDate: step.providerDate || '',
+          candidates: diagnostics
+        });
+      }
     }
     return result;
   }
 
   function summarizeProviderResult(label, result) {
     if (result?.resolution) return `${label}: matched`;
+    const isApiSportsLabel = /^API-(?:Football|Sports)/.test(label);
     const dates = [...new Set((result?.queried || []).map(q => q.providerDate || q.requestKey || q.reason).filter(Boolean))];
     const dateText = dates.length ? ` for ${dates.join(', ')}` : '';
     if ((result?.diagnostics || []).includes('No valid lookup anchor')) return `${label}: invalid Torn start timestamp`;
@@ -2053,13 +2520,28 @@
       const firstErr = String(result.errors[0] || '');
       const statusMatch = firstErr.match(/failed (\d+)/);
       const statusHint = statusMatch ? ` [HTTP ${statusMatch[1]}]` : '';
+      const hasProviderErrorDiagnostic = (result?.parserDiagnostics || [])
+        .some(diagnostic => Array.isArray(diagnostic?.errorsKeys) && diagnostic.errorsKeys.length > 0);
+      if (isApiSportsLabel && hasProviderErrorDiagnostic) return `${label}: provider API/quota error${dateText}`;
       return `${label}: fetch error${dateText}${statusHint}`;
     }
     if ((result?.parseFailures || []).length && !(result?.eventCount || 0)) {
+      const failures = result.parseFailures.map(value => String(value || '').toLowerCase());
+      if (isApiSportsLabel && failures.some(value => value.includes('manual mode') || value.includes('not requested'))) {
+        return `${label}: manual mode cache-only; not requested${dateText}`;
+      }
+      if (isApiSportsLabel && failures.some(value => value.includes('no fixtures') || value.includes('no games') || value.includes('no matches in response'))) {
+        return `${label}: empty provider response${dateText}`;
+      }
+      if (isApiSportsLabel && failures.some(value => value.includes('array missing') || value.includes('events missing') || value.includes('stages missing') || value.includes('expected'))) {
+        return `${label}: parser shape failure${dateText}`;
+      }
       return `${label}: parser failed${dateText}`;
     }
     if (!(result?.eventCount || 0)) return `${label}: no events${dateText}`;
-    return `${label}: events found${dateText}; no confident team match`;
+    const top = (result?.candidateDiagnostics || [])[0];
+    const topText = top ? `; top candidate ${top.teams} (${top.reason}, confidence ${top.confidence})` : '';
+    return `${label}: events found${dateText}; no confident team match${topText}`;
   }
 
   // -- Provider response cache ---------------------------------------------------
@@ -2205,6 +2687,10 @@
     const competition = normalizeName(match.competition);
     const league = normalizeName(match.league);
     const soccerLeague = `${stage} ${competition} ${league}`.trim();
+    const isEnglishPremierLeague =
+      soccerLeague.includes('english premier') ||
+      /\beng(?:land|lish)?\.?1\b/.test(soccerLeague) ||
+      (soccerLeague.includes('premier league') && /\b(england|english|eng\.?1)\b/.test(soccerLeague));
 
     if (sport === 'baseball' && stage.includes('mlb')) return 'baseball_mlb';
     if (sport === 'football' && (soccerLeague.includes('club world cup') || soccerLeague.includes('club world championship'))) return 'soccer_fifa_cwc';
@@ -2214,7 +2700,7 @@
     // C2-FIX: a few high-value ESPN soccer leagues; everything else falls through to
     // api-football. Brazil's Série A is checked before the generic Italian "serie a".
     if (sport === 'football' && (soccerLeague.includes('uefa champions') || soccerLeague.includes('champions league'))) return 'soccer_uefa_champions';
-    if (sport === 'football' && (soccerLeague.includes('english premier') || soccerLeague.includes('premier league'))) return 'soccer_eng_pl';
+    if (sport === 'football' && isEnglishPremierLeague) return 'soccer_eng_pl';
     if (sport === 'football' && (soccerLeague.includes('la liga') || soccerLeague.includes('laliga'))) return 'soccer_esp_laliga';
     if (sport === 'football' && soccerLeague.includes('bundesliga')) return 'soccer_ger_bundesliga';
     if (sport === 'football' && soccerLeague.includes('ligue 1')) return 'soccer_fra_ligue1';
@@ -2250,9 +2736,12 @@
 
   function getProviderPriority(match) {
     const primary = match.sourceKey;
-    const all = PROVIDER_PRIORITY.score;
+    const tennisFallbackFirst = match?.sportKey === 'tennis';
+    const all = tennisFallbackFirst
+      ? ['sofascore', 'espn', 'espncricinfo', 'apifootball', 'apisports', 'livescore', 'thescore', 'bbcsport', 'pandascore']
+      : PROVIDER_PRIORITY.score;
     const ordered = [];
-    if (primary !== 'torn' && all.includes(primary)) ordered.push(primary);
+    if (!tennisFallbackFirst && primary !== 'torn' && all.includes(primary)) ordered.push(primary);
     for (const p of all) { if (!ordered.includes(p)) ordered.push(p); }
     return ordered.filter(p =>
       uiSettings.enabledProviders?.[p] !== false &&
@@ -2535,7 +3024,14 @@
 
   function scoreFromResolution(result, sourceKey, sourceLabel, scoreMapper) {
     if (!result?.resolution) {
-      return { found: false, detail: summarizeProviderResult(sourceLabel, result), unmatched: true };
+      return {
+        found: false,
+        detail: summarizeProviderResult(sourceLabel, result),
+        candidateDiagnostics: result?.candidateDiagnostics || [],
+        statusDiagnostics: result?.statusDiagnostics || [],
+        parserDiagnostics: result?.parserDiagnostics || [],
+        unmatched: true
+      };
     }
     const candidate = result.resolution.candidate;
     const pair = result.resolution.pair;
@@ -2555,6 +3051,9 @@
       anchorKind: candidate.anchorKind,
       confidence: pair.confidence,
       sourceUrl: buildScoreSourceUrl(sourceKey, candidate, mapped),
+      candidateDiagnostics: result.candidateDiagnostics || [],
+      statusDiagnostics: result.statusDiagnostics || [],
+      parserDiagnostics: result.parserDiagnostics || [],
       unmatched: false
     };
   }
@@ -3277,16 +3776,64 @@
   // per sport/date. Returns the gmFetchJsonWithMeta response, or null when the
   // manual gate served nothing this cycle (caller treats as "no board").
   function fetchApiSportsBoard({ cacheKey, url, label, provider }, context = {}) {
+    const familyKey = provider === 'apifootball'
+      ? 'Football'
+      : (label.replace(/\s+(games|fixtures)\s+request$/i, '') || label);
     const manualOnly = uiSettings.apiSportsRefreshMode === 'manual';
-    if (manualOnly && context?.manualRefresh !== true) {
-      const cached = peekProviderCache(cacheKey);
-      if (cached) return Promise.resolve(cached);
-      recordDebugEvent('provider-fetch-meta', { provider, cacheKey, servedFromCache: 'manual-skip' });
-      return Promise.resolve(null);
+    const annotate = (response, meta = {}) => response && typeof response === 'object'
+      ? { ...response, ...meta }
+      : response;
+    const cached = peekProviderCache(cacheKey);
+    if (cached) {
+      return Promise.resolve(annotate(cached, {
+        networkRequested: false,
+        cacheHit: true,
+        manualSuppressed: false,
+        cacheKey
+      }));
     }
+    if (manualOnly && context?.manualRefresh !== true) {
+      recordDebugEvent('provider-fetch-meta', { provider, cacheKey, servedFromCache: 'manual-skip' });
+      return Promise.resolve({
+        skipped: true,
+        skipReason: 'manual-cache-only',
+        provider,
+        label,
+        cacheKey,
+        networkRequested: false,
+        cacheHit: false,
+        manualSuppressed: true,
+        headers: {},
+        status: null,
+        data: null
+      });
+    }
+    if (isByokQuotaExhausted(provider, familyKey) && context?.manualRefresh !== true) {
+      recordDebugEvent('provider-fetch-meta', { provider, cacheKey, skipped: 'out-of-tokens' });
+      return Promise.resolve({
+        error: `${label}: Out of Tokens`,
+        skipped: true,
+        skipReason: 'out-of-tokens',
+        provider,
+        label,
+        cacheKey,
+        networkRequested: false,
+        cacheHit: false,
+        manualSuppressed: false,
+        headers: {},
+        status: null,
+        data: null
+      });
+    }
+    const trackedFetch = trackByokRequest(provider, familyKey, familyKey, 1, () => gmFetchJsonWithMeta(url, apiSportsAuthHeaders(), label));
     return fetchWithCache(
       cacheKey,
-      () => gmFetchJsonWithMeta(url, apiSportsAuthHeaders(), label),
+      () => trackedFetch().then(response => annotate(response, {
+          networkRequested: true,
+          cacheHit: false,
+          manualSuppressed: false,
+          cacheKey
+        })),
       manualOnly ? TTL_APISPORTS_MANUAL : TTL_APISPORTS,
       TTL_ERROR
     );
@@ -3315,6 +3862,27 @@
     return team?.name || team?.displayName || team?.shortName || '';
   }
 
+  function apiFootballParserDiagnostic(response, fixtures = [], providerName = 'API-Football', meta = {}) {
+    const body = response?.data;
+    const errors = body?.errors;
+    const lowerHeaders = {};
+    Object.entries(response?.headers || {}).forEach(([key, value]) => { lowerHeaders[String(key).toLowerCase()] = value; });
+    return sanitizeDebugValue({
+      providerName,
+      providerDate: meta.providerDate || response?.providerDate || '',
+      networkRequested: meta.networkRequested ?? response?.networkRequested ?? false,
+      manualSuppressed: meta.manualSuppressed ?? response?.manualSuppressed ?? false,
+      cacheHit: meta.cacheHit ?? response?.cacheHit ?? false,
+      skipReason: meta.skipReason || response?.skipReason || '',
+      responseType: Array.isArray(body) ? 'array' : typeof body,
+      topLevelKeys: body && typeof body === 'object' ? Object.keys(body).slice(0, 12) : [],
+      results: body?.results ?? null,
+      errorsKeys: errors && typeof errors === 'object' && !Array.isArray(errors) ? Object.keys(errors).slice(0, 12) : [],
+      candidateCount: Array.isArray(fixtures) ? fixtures.length : 0,
+      quotaHeadersPresent: lowerHeaders['x-ratelimit-requests-remaining'] != null || lowerHeaders['x-ratelimit-remaining'] != null
+    });
+  }
+
   async function _findApiSports(match, context = {}) {
     const config = APISPORTS_ENDPOINTS[match.sportKey];
     if (!config) {
@@ -3338,28 +3906,39 @@
         label: `${config.label} games request`,
         provider: 'apisports'
       }, context);
-      if (!response) return { parseFailures: ['API-Sports: manual mode (cache-only)'], candidates: [], eventCount: 0 };
-      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0 };
-
-      const dayRemaining = response?.headers?.['x-ratelimit-requests-remaining'];
-      const minRemaining = response?.headers?.['x-ratelimit-remaining'];
-      if (dayRemaining != null || minRemaining != null) {
-        latestApiSportsQuota[config.label] = {
-          dayRemaining: dayRemaining != null ? String(dayRemaining) : null,
-          minRemaining: minRemaining != null ? String(minRemaining) : null,
-          updatedAt: Date.now()
-        };
+      const baseDiagnostic = apiFootballParserDiagnostic(response, [], config.label, {
+        providerDate: dateStr
+      });
+      if (response?.skipped && response?.skipReason === 'manual-cache-only') {
+        return { parseFailures: ['API-Sports: manual mode cache-only; not requested'], candidates: [], eventCount: 0, parserDiagnostics: [baseDiagnostic] };
       }
+      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0, parserDiagnostics: [baseDiagnostic] };
 
       const body = response?.data;
       const apiErrors = body?.errors;
+      const parserDiagnostic = apiFootballParserDiagnostic(response, Array.isArray(body?.response) ? body.response : [], config.label, {
+        providerDate: dateStr
+      });
       if (apiErrors && !Array.isArray(apiErrors) && Object.keys(apiErrors).length > 0) {
         const errMsg = Object.values(apiErrors).join('; ');
-        recordDebugEvent('provider-fetch-meta', { provider: 'apisports', sportKey: match.sportKey, date: dateStr, errors: sanitizeDebugText(errMsg) });
-        return { errors: [errMsg], candidates: [], eventCount: 0 };
+        updateByokQuotaState({
+          providerKey: 'apisports',
+          familyKey: config.label,
+          label: config.label,
+          headers: response?.headers || {},
+          status: response?.status || 200,
+          errorText: errMsg,
+          outcome: 'error'
+        });
+        recordDebugEvent('provider-fetch-meta', { provider: 'apisports', sportKey: match.sportKey, date: dateStr, errors: sanitizeDebugText(errMsg), parserDiagnostic });
+        return { errors: [errMsg], candidates: [], eventCount: 0, parserDiagnostics: [parserDiagnostic] };
       }
 
-      const games = Array.isArray(body?.response) ? body.response : [];
+      if (!Array.isArray(body?.response)) {
+        return { parseFailures: ['API-Sports: response array missing'], candidates: [], eventCount: 0, parserDiagnostics: [parserDiagnostic] };
+      }
+
+      const games = body.response;
       recordDebugEvent('provider-fetch-meta', {
         provider: 'apisports',
         sportKey: match.sportKey,
@@ -3421,36 +4000,48 @@
         label: 'API-Football fixtures request',
         provider: 'apifootball'
       }, context);
-      if (!response) return { parseFailures: ['API-Football: manual mode (cache-only)'], candidates: [], eventCount: 0 };
-      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0 };
-
-      // Capture quota headers for display (daily remaining and per-minute remaining).
-      const dayRemaining = response?.headers?.['x-ratelimit-requests-remaining'];
-      const minRemaining = response?.headers?.['x-ratelimit-remaining'];
-      if (dayRemaining != null || minRemaining != null) {
-        latestApiSportsQuota['Football'] = {
-          dayRemaining: dayRemaining != null ? String(dayRemaining) : null,
-          minRemaining: minRemaining != null ? String(minRemaining) : null,
-          updatedAt: Date.now()
-        };
+      const baseDiagnostic = apiFootballParserDiagnostic(response, [], 'API-Football', {
+        providerDate: dateStr
+      });
+      if (response?.skipped && response?.skipReason === 'manual-cache-only') {
+        return { parseFailures: ['API-Football: manual mode cache-only; not requested'], candidates: [], eventCount: 0, parserDiagnostics: [baseDiagnostic] };
       }
+      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0, parserDiagnostics: [baseDiagnostic] };
 
       const body = response?.data;
+      const parserDiagnostic = apiFootballParserDiagnostic(response, Array.isArray(body?.response) ? body.response : [], 'API-Football', {
+        providerDate: dateStr
+      });
       const apiErrors = body?.errors;
       if (apiErrors && !Array.isArray(apiErrors) && Object.keys(apiErrors).length > 0) {
         const errMsg = Object.values(apiErrors).join('; ');
-        recordDebugEvent('provider-fetch-meta', { provider: 'apifootball', date: dateStr, errors: sanitizeDebugText(errMsg) });
-        return { errors: [errMsg], candidates: [], eventCount: 0 };
+        updateByokQuotaState({
+          providerKey: 'apifootball',
+          familyKey: 'Football',
+          label: 'Football',
+          headers: response?.headers || {},
+          status: response?.status || 200,
+          errorText: errMsg,
+          outcome: 'error'
+        });
+        recordDebugEvent('provider-fetch-meta', { provider: 'apifootball', date: dateStr, errors: sanitizeDebugText(errMsg), parserDiagnostic });
+        return { errors: [errMsg], candidates: [], eventCount: 0, parserDiagnostics: [parserDiagnostic] };
       }
 
-      const fixtures = Array.isArray(body?.response) ? body.response : [];
+      if (!Array.isArray(body?.response)) {
+        return { parseFailures: ['API-Football: response array missing'], candidates: [], eventCount: 0, parserDiagnostics: [parserDiagnostic] };
+      }
+
+      const fixtures = body.response;
+      parserDiagnostic.candidateCount = fixtures.length;
       recordDebugEvent('provider-fetch-meta', {
         provider: 'apifootball',
         date: dateStr,
-        results: body?.results ?? fixtures.length
+        results: body?.results ?? fixtures.length,
+        parserDiagnostic
       });
 
-      if (!fixtures.length) return { parseFailures: ['API-Football: no fixtures in response'], candidates: [], eventCount: 0 };
+      if (!fixtures.length) return { parseFailures: ['API-Football: no fixtures in response'], candidates: [], eventCount: 0, parserDiagnostics: [parserDiagnostic] };
 
       return {
         eventCount: fixtures.length,
@@ -3512,7 +4103,7 @@
     return safeExternalSourceUrl(url);
   }
 
-  async function _findPandaScore(match) {
+  async function _findPandaScore(match, context = {}) {
     const slug = PANDASCORE_GAME_SLUGS[match.sportKey];
     if (!slug) return { found: false, detail: 'PandaScore: esport not mapped', unmatched: true };
     if (!hasPandaScoreToken()) return { found: false, detail: 'PandaScore token not configured', unmatched: true };
@@ -3524,20 +4115,20 @@
       params.set('page[size]', '100');
       params.set('sort', 'begin_at');
       const url = `https://api.pandascore.co/${encodeURIComponent(slug)}/matches?${params.toString()}`;
+      const cacheKey = `pandascore:${slug}:${step.requestKey}`;
+      if (isByokQuotaExhausted('pandascore', slug) && context?.manualRefresh !== true) {
+        const cached = peekProviderCache(cacheKey);
+        if (cached) return cached;
+        recordDebugEvent('provider-fetch-meta', { provider: 'pandascore', slug, skipped: 'out-of-tokens' });
+        return { errors: ['PandaScore: Out of Tokens'], candidates: [], eventCount: 0 };
+      }
       const response = await fetchWithCache(
-        `pandascore:${slug}:${step.requestKey}`,
-        () => gmFetchJsonWithMeta(url, pandaScoreAuthHeaders(), 'PandaScore matches request'),
+        cacheKey,
+        trackByokRequest('pandascore', slug, `PandaScore ${slug}`, 1, () => gmFetchJsonWithMeta(url, pandaScoreAuthHeaders(), 'PandaScore matches request')),
         TTL_SUCCESS,
         TTL_ERROR
       );
       if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0 };
-      // Best-effort: PandaScore returns an hourly rate-limit remaining header. Capture
-      // it for display if present; PandaScore exposes no monthly-quota header, so this
-      // is omitted entirely when the header is absent.
-      const pandaRemaining = response?.headers?.['x-rate-limit-remaining'];
-      if (pandaRemaining != null && pandaRemaining !== '') {
-        latestPandaQuota = { remaining: String(pandaRemaining), updatedAt: Date.now() };
-      }
       const matches = Array.isArray(response?.data) ? response.data : response;
       if (!Array.isArray(matches)) return { parseFailures: ['PandaScore matches array missing'], candidates: [], eventCount: 0 };
       return {
@@ -4431,18 +5022,11 @@
 
     const response = await fetchWithCache(
       cacheKey,
-      () => gmFetchJsonWithMeta(url, {}, 'The Odds API odds request'),
+      trackByokRequest('theoddsapi', sportKey, 'The Odds API', getOddsPullCost(), () => gmFetchJsonWithMeta(url, {}, 'The Odds API odds request')),
       ttl,
       TTL_ODDS_ERROR
     );
     if (response?.error) return { error: response.error };
-
-    latestOddsQuota = {
-      remaining: response.headers?.['x-requests-remaining'] || '',
-      used: response.headers?.['x-requests-used'] || '',
-      last: response.headers?.['x-requests-last'] || '',
-      updatedAt: Date.now()
-    };
 
     const matched = findOddsApiEvent(match, Array.isArray(response.data) ? response.data : []);
     if (!matched?.event) return { error: 'No matching event in The Odds API snapshot.' };
@@ -4478,6 +5062,9 @@
     const providers = getProviderPriority(match);
     const tried  = [];
     const errors = [];
+    const diagnostics = [];
+    const statusDiagnostics = [];
+    const parserDiagnostics = [];
 
     for (const providerKey of providers) {
       tried.push(providerKey);
@@ -4491,23 +5078,33 @@
         else if (providerKey === 'livescore')   result = await _findLivescore(match);
         else if (providerKey === 'thescore')    result = await _findThescore(match);
         else if (providerKey === 'bbcsport')    result = await _findBbc(match);
-        else if (providerKey === 'pandascore')  result = await _findPandaScore(match);
+        else if (providerKey === 'pandascore')  result = await _findPandaScore(match, context);
 
         if (result?.found) {
+          diagnostics.push(...(result.candidateDiagnostics || []));
+          statusDiagnostics.push(...(result.statusDiagnostics || []));
+          parserDiagnostics.push(...(result.parserDiagnostics || []));
           recordDebugEvent('score-found', {
             match: match?.name || '',
             providerKey,
-            detail: result.detail || ''
+            detail: result.detail || '',
+            statusDiagnostics: result.statusDiagnostics || []
           });
           debugLog(`Score found via ${providerKey} for "${match.name}"`);
-          return { ...result, providersTried: tried, providerErrors: errors };
+          return { ...result, providersTried: tried, providerErrors: errors, providerDiagnostics: diagnostics, statusDiagnostics, parserDiagnostics };
         }
         if (result?.detail) {
           errors.push(result.detail);
+          diagnostics.push(...(result.candidateDiagnostics || []));
+          statusDiagnostics.push(...(result.statusDiagnostics || []));
+          parserDiagnostics.push(...(result.parserDiagnostics || []));
           recordDebugEvent('score-provider-unmatched', {
             match: match?.name || '',
             providerKey,
-            detail: result.detail
+            detail: result.detail,
+            candidateDiagnostics: result.candidateDiagnostics || [],
+            parserDiagnostics: result.parserDiagnostics || [],
+            statusDiagnostics: result.statusDiagnostics || []
           });
         }
       } catch (e) {
@@ -4524,14 +5121,20 @@
     recordDebugEvent('score-unmatched', {
       match: match?.name || '',
       providersTried: tried,
-      providerErrors: errors
+      providerErrors: errors,
+      providerDiagnostics: diagnostics,
+      parserDiagnostics,
+      statusDiagnostics
     });
     return {
       found:          false,
       detail:         errors.join(' | ') || 'No Games Matched',
       unmatched:      true,
       providersTried: tried,
-      providerErrors: errors
+      providerErrors: errors,
+      providerDiagnostics: diagnostics,
+      parserDiagnostics,
+      statusDiagnostics
     };
   }
 
@@ -6281,11 +6884,7 @@
                       <button class="tm-bookie-apisports-save-btn" type="button">Save Key</button>
                     `}
                   </div>
-                  ${hasApiSportsKey() && Object.keys(latestApiSportsQuota).length > 0 ? `
-                    <div class="tm-bookie-odds-quota">
-                      ${Object.entries(latestApiSportsQuota).map(([key, quota]) => `<div>${escapeHtml(key)}: day ${escapeHtml(String(quota.dayRemaining ?? '—'))} / min ${escapeHtml(String(quota.minRemaining ?? '—'))}</div>`).join('')}
-                    </div>
-                  ` : ''}
+                  ${hasApiSportsKey() ? renderByokQuotaBlock(['apifootball', 'apisports'], 'Not pulled yet') : ''}
                   <div class="tm-bookie-apisports-mode-row">
                     <span class="tm-bookie-apisports-mode-label">Refresh</span>
                     <span class="tm-bookie-apisports-mode-pill" aria-label="API-Sports refresh mode">
@@ -6312,11 +6911,7 @@
                       <button class="tm-bookie-pandascore-save-btn" type="button">Save Token</button>
                     `}
                   </div>
-                  ${hasPandaScoreToken() && latestPandaQuota?.remaining != null && latestPandaQuota.remaining !== '' ? `
-                    <div class="tm-bookie-odds-quota">
-                      Remaining (hourly): ${escapeHtml(String(latestPandaQuota.remaining))}
-                    </div>
-                  ` : ''}
+                  ${hasPandaScoreToken() ? renderByokQuotaBlock('pandascore', 'Not pulled yet') : ''}
                 ` : `
                   <div class="tm-bookie-settings-note">Enable PandaScore under Score Sources to configure a token.</div>
                 `}
@@ -6358,9 +6953,7 @@
                     </select>
                   </div>
                   <div class="tm-bookie-settings-note">Each pull uses ${getOddsPullCost()} credit${getOddsPullCost() === 1 ? '' : 's'} (markets × 1 region). Spreads and totals are mainly available for US sports and books.</div>
-                  <div class="tm-bookie-odds-quota">
-                    Remaining quota: ${latestOddsQuota?.remaining != null ? escapeHtml(String(latestOddsQuota.remaining)) : '—'}
-                  </div>
+                  ${hasOddsApiKey() ? renderByokQuotaBlock('theoddsapi', 'Not pulled yet') : ''}
                 ` : ''}
               </div>
 

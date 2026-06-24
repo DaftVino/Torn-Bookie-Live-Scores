@@ -123,6 +123,36 @@ test('powered-by sources use real provider icons and never fall back to Torn', (
   assert.doesNotMatch(html, />API-Football</);
 });
 
+test('debug report includes panel scroll metrics', () => {
+  const b = loadUserscript();
+  const settings = {
+    offsetTop: 860,
+    getBoundingClientRect: () => ({ top: 940, bottom: 1280, width: 340, height: 340 })
+  };
+  const content = {
+    scrollTop: 120,
+    scrollHeight: 1400,
+    clientHeight: 720,
+    querySelector: selector => selector === '.tm-bookie-settings-group' ? settings : null,
+    getBoundingClientRect: () => ({ top: 200, bottom: 920, width: 340, height: 720 })
+  };
+  const panel = {
+    scrollHeight: 780,
+    clientHeight: 780,
+    querySelector: selector => selector === '.tm-bookie-content' ? content : content.querySelector(selector),
+    getBoundingClientRect: () => ({ top: 120, bottom: 900, width: 360, height: 780 })
+  };
+  b.__control.document.getElementById = id => id === 'tm-bookie-live-panel' ? panel : null;
+
+  const report = b.buildDebugReport();
+  assert.equal(report.panelState.scrollMetrics.panel.present, true);
+  assert.equal(report.panelState.scrollMetrics.content.scrollTop, 120);
+  assert.equal(report.panelState.scrollMetrics.content.scrollHeight, 1400);
+  assert.equal(report.panelState.scrollMetrics.content.clientHeight, 720);
+  assert.equal(report.panelState.scrollMetrics.settings.offsetTop, 860);
+  assert.equal(report.panelState.scrollMetrics.settings.offsetFromContentTop, 860);
+});
+
 test('formatGame renders a deterministic copy-tool block', () => {
   const game = { sport: 'Baseball', matchName: 'Red Sox vs Yankees', competition: 'MLB', startTime: '18:00', markets: [{ name: 'Moneyline', bets: [{ desc: 'Red Sox', odds: '2/1', mult: 'x3.0', suspended: false }, { desc: 'Yankees', odds: '1/2', mult: 'x1.5', suspended: true }] }] };
   const out = a.formatGame(game, false);

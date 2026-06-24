@@ -69,6 +69,7 @@ test('getEspnKey maps recognised leagues, null otherwise', () => {
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'FIFA Club World Cup' }), 'soccer_fifa_cwc');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Australian A-League Men' }), 'soccer_aus_aleague');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Norwegian Eliteserien' }), 'soccer_nor_elite');
+  assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Premier League 2025/2026(Tanzania 1)' }), null);
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'MLS Next Pro' }), null);
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Georgia' }), null);
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Latvia' }), null);
@@ -81,6 +82,9 @@ test('getEspnKey maps recognised leagues, null otherwise', () => {
 test('C2-FIX: getEspnKey maps the high-value soccer leagues', () => {
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'UEFA Champions League' }), 'soccer_uefa_champions');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'English Premier League' }), 'soccer_eng_pl');
+  assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Premier League', league: 'England' }), 'soccer_eng_pl');
+  assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Premier League', league: 'eng.1' }), 'soccer_eng_pl');
+  assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Premier League 2025/2026(Tanzania 1)' }), null);
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Spanish La Liga' }), 'soccer_esp_laliga');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'German Bundesliga' }), 'soccer_ger_bundesliga');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'French Ligue 1' }), 'soccer_fra_ligue1');
@@ -89,6 +93,7 @@ test('C2-FIX: getEspnKey maps the high-value soccer leagues', () => {
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Major League Soccer' }), 'soccer_usa_mls');
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'Mexican Liga MX' }), 'soccer_mex_ligamx');
   assert.equal(a.chooseScoreSource({ sport: 'Football', competition: 'English Premier League' }), 'espn');
+  assert.equal(a.chooseScoreSource({ sport: 'Football', competition: 'Premier League 2025/2026(Tanzania 1)' }), 'torn');
   // The MLS top-flight matcher must not swallow MLS Next Pro (a different ESPN board).
   assert.equal(a.getEspnKey({ sport: 'Football', competition: 'MLS Next Pro' }), null);
   // Every mapped key must resolve to a real ESPN_ENDPOINTS URL (guards against typos).
@@ -124,9 +129,13 @@ test('getProviderPriority filters by enabled + supported and de-dupes primary', 
   });
   assert.equal(soccer[0], 'espn');
 
-  // Tennis -> espn primary (dedicated tennis parser); sofascore/livescore follow
+  // Tennis -> SofaScore first while ESPN ID coverage is incomplete.
   const tennis = a.getProviderPriority({ sport: 'Tennis', sportKey: 'tennis', sourceKey: 'espn' });
-  assert.equal(tennis[0], 'espn');
+  assert.equal(tennis[0], 'sofascore');
+  assert.equal(tennis[1], 'espn');
+  assert.ok(!tennis.includes('livescore'));
+  assert.ok(!tennis.includes('thescore'));
+  assert.ok(!tennis.includes('bbcsport'));
 
   // Australian Football -> espn primary; sofascore/livescore follow
   const afl = a.getProviderPriority({ sport: 'Australian Football', sportKey: 'australian-football', sourceKey: 'espn' });
@@ -147,12 +156,34 @@ test('ESPN_ENDPOINTS includes tennis_all, australian_football_afl, and rugby_lea
   assert.ok(a.ESPN_ENDPOINTS.rugby_league_nrl.includes('/rugby-league/3/scoreboard'));
 });
 
-test('getProviderPriority reflects runtime provider toggles (shared uiSettings)', () => {
-  // thescore is disabled by default; enabling it should make it appear for a supported sport
+test('getProviderPriority suppresses known 404 tennis providers even if toggled', () => {
   assert.ok(!a.getProviderPriority({ sportKey: 'tennis', sourceKey: 'sofascore' }).includes('thescore'));
   a.uiSettings.enabledProviders.thescore = true;
-  assert.ok(a.getProviderPriority({ sportKey: 'tennis', sourceKey: 'sofascore' }).includes('thescore'));
+  assert.ok(!a.getProviderPriority({ sportKey: 'tennis', sourceKey: 'sofascore' }).includes('thescore'));
   a.uiSettings.enabledProviders.thescore = false; // restore
+});
+
+test('Tanzania Premier League routes to football fallbacks, not ESPN English Premier League', () => {
+  const b = loadUserscript();
+  b.setApiSportsKey('test-key-tanzania');
+  b.uiSettings.enabledProviders.apifootball = true;
+  const match = {
+    sport: 'Football',
+    sportKey: 'football',
+    competition: 'Premier League 2025/2026(Tanzania 1)',
+    sourceKey: 'torn'
+  };
+  const priority = b.getProviderPriority(match);
+  assert.equal(b.getEspnKey(match), null);
+  assert.ok(!priority.includes('espn'), priority.join(','));
+  assert.ok(priority.includes('sofascore'), priority.join(','));
+  assert.ok(priority.includes('apifootball'), priority.join(','));
+});
+
+test('known 404 tennis providers are not supported until remapped', () => {
+  assert.equal(a.isProviderSupportedForSport('livescore', { sportKey: 'tennis' }), false);
+  assert.equal(a.isProviderSupportedForSport('thescore', { sportKey: 'tennis' }), false);
+  assert.equal(a.isProviderSupportedForSport('bbcsport', { sportKey: 'tennis' }), false);
 });
 
 test('isNhlMatch detects NHL via stage/competition', () => {
@@ -261,7 +292,9 @@ test('_findEspnTennis: all TENNIS_LEAGUE_IDS are queried', async () => {
   const leagueIds = b.__control.gmRequests
     .map(r => { const m = r.url.match(/leagueId=(\d+)/); return m ? m[1] : null; })
     .filter(Boolean);
-  // At minimum, all 5 seeded league IDs should appear (188, 444, 637, 636, 635)
+  // At minimum, all 5 seeded league IDs should appear (188, 444, 637, 636, 635).
+  // 2026-06-24 ESPN probe verified Wimbledon qualifying/Eastbourne/Mallorca/Bad
+  // Homburg on the tennis/all board; Plovdiv was not present there.
   for (const id of ['188', '444', '637', '636', '635']) {
     assert.ok(leagueIds.includes(id), `leagueId=${id} not found in requests`);
   }

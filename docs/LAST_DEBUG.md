@@ -254,6 +254,21 @@ Repair direction:
 9. Debug report should include sanitized quota metadata and local usage totals without exposing keys/tokens.
 10. Add tests for "no quota yet", "headers present", "headers missing after successful request", "local 24-hour fallback count", "cache hits do not increment usage", and "explicit quota exhaustion displays Out of Tokens."
 
+Completed:
+
+- Added a shared BYOK quota/usage display path for API-Sports/API-Football, PandaScore, and The Odds API.
+- Added a rolling 24-hour local usage ledger in userscript storage that records only real provider network requests, not cache hits, coalesced requests, or API-Sports manual-mode skips.
+- Provider headers now populate per-family quota rows where available; missing headers fall back to local usage counts.
+- The Odds API display now shows remaining, used, last request credit cost, and local 24-hour credits when available, with `Not pulled yet` before first use.
+- Explicit exhaustion from HTTP `429`, zero remaining quota headers, or quota/rate-limit error text now displays `Out of Tokens`.
+- Exhausted score-provider families skip automatic retries while still allowing manual refresh probes for reset checks.
+- Debug reports now include sanitized BYOK quota state and local 24-hour usage totals without exposing keys or tokens.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `npm.cmd test` from `tests` passed: `246/246`.
+
 ### Step 4 - Tennis Score Matching
 
 The latest capture refines:
@@ -272,6 +287,24 @@ Repair direction:
 4. Disable or suppress LiveScore/TheScore/BBC tennis retries after known 404s unless those endpoints are re-probed and remapped.
 5. Add status diagnostics for Torn-live/provider-scheduled contradictions.
 6. Add fixture tests for the observed competitions listed above.
+
+Completed:
+
+- Tennis provider priority now tries SofaScore before ESPN while ESPN tournament-ID coverage remains incomplete.
+- LiveScore, TheScore, and BBC Sport tennis support is suppressed so the known 404 endpoints are not retried until they are re-probed/remapped.
+- Provider misses now record sanitized top-candidate diagnostics: candidate teams, provider start time, tournament, status, confidence, component team scores, overall score, and rejection reason.
+- Torn-live/provider-scheduled contradictions now emit sanitized status diagnostics and carry through to score/debug report data.
+- ESPN tennis IDs were rechecked against the 2026-06-24 tennis/all board: Wimbledon qualifying, Eastbourne, Mallorca, and Bad Homburg are covered by the existing IDs; Plovdiv Challenger was not present, so SofaScore remains first for tennis.
+- Added regression tests for tennis provider ordering/suppression, candidate diagnostics, and provider-scheduled status contradictions.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `npm.cmd test` from `tests` passed: `249/249`.
+
+Summary:
+
+- Step 4 is complete. The next debug report should stop showing repeated LiveScore/TheScore/BBC tennis 404 retries and should include actionable candidate/status diagnostics for remaining SofaScore/ESPN tennis misses.
 
 ### Step 5 - Football Provider Routing
 
@@ -292,6 +325,23 @@ Repair direction:
 4. Add candidate diagnostics for SofaScore/BBC football "events found; no confident team match."
 5. Add a regression test for `Premier League 2025/2026(Tanzania 1)` so it does not map to `soccer_eng_pl`.
 
+Completed:
+
+- ESPN soccer mapping now requires explicit England context before routing `Premier League` to `soccer_eng_pl`.
+- Tanzania `Premier League 2025/2026(Tanzania 1)` no longer maps to ESPN English Premier League and instead falls through to football fallbacks such as SofaScore and API-Football when available.
+- API-Football parser diagnostics now report sanitized response shape, top-level keys, `results`, error keys, candidate count, and quota-header presence without raw provider response bodies.
+- Football candidate diagnostics now cover provider boards that return events but no confident team match.
+- Added regression coverage for Tanzania Premier League routing, API-Football parser diagnostics, and football no-confident-match candidate diagnostics.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `npm.cmd test` from `tests` passed: `252/252`.
+
+Summary:
+
+- Step 5 is complete. The next debug report should stop showing Tanzania Premier League rows routed to `soccer_eng_pl` and should include actionable API-Football parser/candidate diagnostics for remaining football misses.
+
 ### Step 6 - Debug Report Improvements
 
 Repair direction:
@@ -301,6 +351,24 @@ Repair direction:
 3. Add parser-failure diagnostics for provider responses: response type, top-level keys, result counts, error-key presence, and provider name.
 4. Add quota metadata for each BYOK provider without exposing keys/tokens, including whether quota headers were absent.
 5. Keep provider raw responses out of the debug report.
+
+Completed:
+
+- Debug reports now include scroll metrics for the panel, scrollable content area, and settings section, including dimensions, `scrollTop`, `scrollHeight`, `clientHeight`, and settings offset.
+- Provider candidate diagnostics remain included for "events found; no confident team match" cases.
+- API-Football/API-Sports parser diagnostics now include provider identity, response type, top-level keys, result counts, error-key presence, candidate count, and quota-header presence.
+- API-Football/API-Sports provider-error responses now carry sanitized parser diagnostics instead of losing response-shape context.
+- BYOK quota metadata and local 24-hour usage totals remain present in debug reports without exposing keys/tokens.
+- Raw provider response bodies remain excluded from debug reports.
+
+Verified:
+
+- `node --check ../Torn_Bookie_Live_Scores.js` passed from `tests`.
+- `npm.cmd test` from `tests` passed: `254/254`.
+
+Summary:
+
+- Step 6 is complete. The next copied debug report should include actionable scroll metrics plus sanitized provider parser/candidate/quota diagnostics.
 
 ### Step 7 - Verification
 
@@ -312,3 +380,123 @@ Minimum verification after implementation:
 4. Verify the bottom of Settings is reachable by scrolling.
 5. Verify Powered By never shows Torn.
 6. Verify quota displays are clear before and after each BYOK provider has been used.
+
+Completed:
+
+- Ran the required syntax check.
+- Ran the full test suite from `tests`.
+- Added/verified regression coverage for scroll metrics in the debug report.
+- Verified Powered By does not render Torn through existing render-state coverage.
+- Verified BYOK quota display states through existing quota coverage: no quota yet, provider headers present, headers missing after use, local 24-hour fallback, and out-of-token state.
+
+Verified:
+
+- `node --check ../Torn_Bookie_Live_Scores.js` passed.
+- `npm.cmd test` from `tests` passed: `254/254`.
+- Browser smoke was attempted through the in-app browser connector and local Chrome/Edge headless runs, but this environment would not expose a usable browser session/output. The same scroll/settings/source/quota invariants are covered by the passing headless regression tests.
+
+Summary:
+
+- Step 7 verification is complete except for visual browser confirmation, which was blocked by browser tooling in this environment and documented above.
+
+### Step 8 - Post-Step-5 Follow-Up Corrections
+
+Latest source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\93b04940-7123-40ff-a2eb-1e62cd02b942\pasted-text.txt`
+
+Generated at: `2026-06-24T14:41:34.653Z`
+
+Important confirmation from the new capture:
+
+- Step 4 changes are active: tennis provider priority is now `SofaScore -> ESPN`, and LiveScore/TheScore/BBC tennis 404 retries are gone.
+- Step 5 changes are active: Tanzania Premier League rows no longer route to ESPN `soccer_eng_pl`; their provider priority is now `SofaScore -> API-Football -> BBC Sport`.
+- The remaining football misses are no longer caused by the original ESPN English Premier League false mapping.
+
+New findings:
+
+- Tennis miss: `Paul Jubb v Tomas Barrios` has a real SofaScore top candidate, `Paul Jubb v Tom\u00e1s Barrios Vera`, but confidence is only `47`. This points to player-name normalization, not provider coverage.
+- The current `normalizeName()` diacritic-stripping regex appears mojibaked in source and should be replaced with a literal Unicode combining-mark range, for example `/[\u0300-\u036f]/g`, after `normalize('NFD')`.
+- Tennis player matching should allow safe extra trailing surname tokens for individual sports when the shorter normalized player name appears as a contiguous token sequence inside the longer provider name. Example: `tomas barrios` should confidently match `tomas barrios vera`.
+- Football miss: SofaScore and BBC Sport return events, but the top candidates are unrelated international fixtures (`Czechia v Mexico`, `Panama v Croatia`) at confidence `0`. That indicates those free boards do not cover the Tanzania Premier League rows in this capture.
+- API-Football is still not providing useful results, but the latest report shows no `v3.football.api-sports.io` host entry, empty `apiSportsQuota`, empty `byokQuota`, and empty `byokLocalUsage24h`. That means no real API-Football network request was recorded in this capture, despite the row detail saying `API-Football: parser failed`.
+- The API-Football path has a likely diagnostic bug: the API error branch references `parserDiagnostic` before it is initialized. If the provider returns an `errors` object, this can convert a normal API/quota error into an unhelpful parser failure.
+- API-Football manual/cache-only skips are currently summarized too generically as `parser failed`. That hides the difference between "manual mode skipped the request", "provider returned an API error", "provider returned no fixtures", and "parser shape drift".
+
+Repair direction:
+
+1. Fix `normalizeName()` diacritic stripping so accented provider names normalize correctly.
+2. Add individual-sport player-name containment scoring for tennis, with regression coverage for `Tomas Barrios` vs `Tom\u00e1s Barrios Vera`.
+3. Initialize API-Football parser diagnostics before the API error branch and include those diagnostics whenever API-Football returns provider errors.
+4. Split API-Football failure summaries into distinct messages:
+   - manual mode/cache-only skip with no cached board,
+   - provider API/quota error,
+   - empty provider response,
+   - parser shape failure.
+5. In debug reports, include whether API-Football was actually requested on the network for each queried date and whether manual BYOK mode suppressed the request.
+6. For Tanzania Premier League football, verify API-Football with a manual refresh using the BYOK key. The free SofaScore/BBC boards in this capture appear to lack the needed league coverage.
+7. If API-Football returns the Tanzania fixtures only when league/season parameters are supplied, add a league mapping for `Premier League 2025/2026(Tanzania 1)` to the API-Football Tanzania Premier League ID instead of relying only on the all-fixtures date endpoint.
+
+Regression tests to add:
+
+1. `normalizeName('Tom\u00e1s Barrios Vera')` should preserve `tomas barrios vera` without splitting the accented character into `toma s`.
+2. Tennis matching should accept `Paul Jubb v Tomas Barrios` against `Paul Jubb v Tom\u00e1s Barrios Vera`.
+3. API-Football provider-error responses should not throw or collapse into generic parser failure.
+4. API-Football manual-mode cache skips should report `manual mode` or `not requested` rather than `parser failed`.
+5. A football debug fixture with no API-Football network request should expose that absence explicitly in diagnostics.
+
+Completed:
+
+- Added a correct Unicode combining-mark normalization pass so accented provider names like `Tom\u00e1s Barrios Vera` normalize to `tomas barrios vera`.
+- Added tennis-specific player-name scoring for safe extra trailing surname tokens, allowing `Tomas Barrios` to match `Tom\u00e1s Barrios Vera` without loosening club/team containment rules.
+- API-Football/API-Sports manual cache-only skips now carry diagnostics showing `networkRequested: false`, `manualSuppressed: true`, and the skip reason.
+- API-Football provider API/quota errors, empty provider responses, and response-shape failures now produce distinct summaries instead of collapsing into generic `parser failed`.
+- API-Football parser diagnostics now include provider date, network-request status, cache-hit status, manual-suppression status, and skip reason without raw provider response bodies.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `node --test tests/matching.test.js tests/apifootball.test.js` passed: `44/44`.
+- `npm.cmd test` from `tests` passed: `258/258`.
+
+Summary:
+
+- Step 8 is complete. The next debug report should distinguish API-Football no-network/manual-skip cases from real provider errors or parser drift, and the `Paul Jubb v Tom\u00e1s Barrios Vera` SofaScore candidate should clear tennis matching confidence.
+
+### Step 9 - Tennis Name-Order Follow-Up
+
+Latest source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\53689892-c38d-4623-b2a5-50027cb8973d\pasted-text.txt`
+
+Generated at: `2026-06-24T18:33:26.982Z`
+
+Important confirmation from the new capture:
+
+- The user confirmed the additional tennis matcher change fixed the remaining issue.
+- SofaScore tennis score boards are reachable and resolving live tennis rows again. The report shows `score-found` events for `Andrej Nedic v Sebastian Gima`, `Bianca Andreescu v Jil Teichmann`, `Ashlyn Krueger v Mai Hontama`, and other tennis rows through SofaScore.
+- The active details match `Bianca Andreescu v Jil Teichmann` is resolved via SofaScore with score `1-1` and detail `3rd set`.
+- The only repeated SofaScore errors visible in this capture are `/h2h/events` 404s from details enrichment. These are not main score lookup failures.
+- The report no longer shows the earlier `Soon-Woo Kwon v Arthur Gea` unmatched score failure. That is consistent with the tennis name-order fix.
+
+New finding:
+
+- Step 8 fixed accented trailing-surname variants such as `Tomas Barrios` vs `Tom\u00e1s Barrios Vera`, but the next miss was a different tennis naming pattern: provider family-name-first and collapsed hyphen spacing, for example Torn `Soon-Woo Kwon` vs provider `Kwon Soonwoo` / `Kwon Soon-woo`.
+
+Completed:
+
+- Removed the duplicate mojibaked diacritic-stripping regex from `normalizeName()`, leaving the explicit Unicode combining-mark range after `normalize('NFD')`.
+- Extended tennis-only individual-name matching to accept provider family-name-first order.
+- Extended tennis-only individual-name matching to accept adjacent-token collapse from hyphen spacing differences, such as `Soon Woo` vs `Soonwoo`.
+- Kept the broader club/team matcher unchanged so football/baseball/etc. containment remains conservative.
+- Added regression coverage for `Soon-Woo Kwon v Arthur Gea` matching provider `Kwon Soonwoo v Arthur Gea` with no Torn start timestamp, matching the debug-log live-recovery path.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `node --test tests\matching.test.js` passed: `27/27`.
+- `npm.cmd test` from `tests` passed: `259/259`.
+
+Summary:
+
+- Step 9 is complete. Tennis matching now covers the observed provider name variants: accented trailing surnames, family-name-first ordering, and collapsed hyphen/given-name spacing, while keeping non-tennis team matching strict.

@@ -262,6 +262,147 @@ test('API-Football response mapping: candidateWithStep fields are populated corr
   assert.equal(startMs, Date.UTC(2026, 5, 21, 19, 0, 0));
 });
 
+test('API-Football parser diagnostics describe response shape without raw body', () => {
+  const a = loadUserscript();
+  const response = {
+    status: 200,
+    headers: {
+      'x-ratelimit-requests-remaining': '87',
+      'x-ratelimit-remaining': '8'
+    },
+    data: {
+      get: 'fixtures',
+      parameters: { date: '2026-06-24' },
+      errors: { plan: 'quota reached' },
+      results: 0,
+      response: []
+    }
+  };
+
+  const diagnostic = a.apiFootballParserDiagnostic(response, []);
+
+  assert.equal(diagnostic.responseType, 'object');
+  assert.deepEqual(diagnostic.errorsKeys, ['plan']);
+  assert.equal(diagnostic.results, 0);
+  assert.equal(diagnostic.candidateCount, 0);
+  assert.equal(diagnostic.quotaHeadersPresent, true);
+  assert.ok(diagnostic.topLevelKeys.includes('response'));
+  assert.ok(!JSON.stringify(diagnostic).includes('quota reached'), 'diagnostic must not include raw provider error text');
+});
+
+test('API-Football provider errors include parser diagnostics and do not throw', async () => {
+  const body = JSON.stringify({
+    get: 'fixtures',
+    parameters: { date: '2026-06-21' },
+    errors: { plan: 'quota reached' },
+    results: 0,
+    response: []
+  });
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: {
+        status: 200,
+        responseText: body,
+        responseHeaders: 'x-ratelimit-requests-remaining: 0\r\nx-ratelimit-remaining: 0\r\n'
+      }
+    })
+  });
+  a.setApiSportsKey('football-provider-error-key');
+  a.__resetCaches();
+
+  const result = await a._findApiFootball(makeFootballMatch(), { manualRefresh: true });
+
+  assert.equal(result.found, false);
+  assert.match(result.detail, /API-Football:/);
+  assert.ok(Array.isArray(result.parserDiagnostics));
+  assert.ok(result.parserDiagnostics.length > 0);
+  assert.equal(result.parserDiagnostics[0].providerName, 'API-Football');
+  assert.deepEqual(result.parserDiagnostics[0].errorsKeys, ['plan']);
+  assert.equal(result.parserDiagnostics[0].quotaHeadersPresent, true);
+  assert.ok(!JSON.stringify(result.parserDiagnostics).includes('quota reached'), 'diagnostics must not include raw provider error text');
+});
+
+test('API-Football manual-mode cache skip reports not requested with diagnostics', async () => {
+  let requestCount = 0;
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => {
+      requestCount += 1;
+      return { type: 'load', response: { status: 200, responseText: '{}', responseHeaders: '' } };
+    }
+  });
+  a.setApiSportsKey('manual-football-key');
+  a.uiSettings.apiSportsRefreshMode = 'manual';
+  a.__resetCaches();
+
+  const result = await a._findApiFootball(makeFootballMatch({
+    team1: 'Central SC',
+    team2: 'Ferroviario'
+  }));
+
+  assert.equal(requestCount, 0);
+  assert.match(result.detail, /manual mode cache-only; not requested/);
+  assert.equal(result.parserDiagnostics[0].providerName, 'API-Football');
+  assert.equal(result.parserDiagnostics[0].networkRequested, false);
+  assert.equal(result.parserDiagnostics[0].manualSuppressed, true);
+  assert.equal(result.parserDiagnostics[0].skipReason, 'manual-cache-only');
+});
+
+test('API-Football empty provider response is not reported as generic parser failure', async () => {
+  const body = JSON.stringify({
+    get: 'fixtures',
+    parameters: { date: '2026-06-21' },
+    errors: [],
+    results: 0,
+    response: []
+  });
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 200, responseText: body, responseHeaders: '' }
+    })
+  });
+  a.setApiSportsKey('empty-football-key');
+  a.__resetCaches();
+
+  const result = await a._findApiFootball(makeFootballMatch({
+    team1: 'Central SC',
+    team2: 'Ferroviario'
+  }), { manualRefresh: true });
+
+  assert.match(result.detail, /empty provider response/);
+  assert.doesNotMatch(result.detail, /parser failed/);
+  assert.equal(result.parserDiagnostics[0].networkRequested, true);
+});
+
+test('API-Football response shape drift is reported separately from empty response', async () => {
+  const body = JSON.stringify({
+    get: 'fixtures',
+    parameters: { date: '2026-06-21' },
+    errors: [],
+    results: 1,
+    response: { unexpected: true }
+  });
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 200, responseText: body, responseHeaders: '' }
+    })
+  });
+  a.setApiSportsKey('shape-football-key');
+  a.__resetCaches();
+
+  const result = await a._findApiFootball(makeFootballMatch({
+    team1: 'Central SC',
+    team2: 'Ferroviario'
+  }), { manualRefresh: true });
+
+  assert.match(result.detail, /parser shape failure/);
+  assert.doesNotMatch(result.detail, /empty provider response/);
+  assert.equal(result.parserDiagnostics[0].responseType, 'object');
+  assert.equal(result.parserDiagnostics[0].networkRequested, true);
+});
+
 // ---------------------------------------------------------------------------
 // Per-date caching: second match on same date must not fire a second request
 // ---------------------------------------------------------------------------

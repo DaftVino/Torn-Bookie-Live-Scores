@@ -11,6 +11,7 @@ const SEC = ms => Math.floor(ms / 1000);
 test('normalizeName: accents, ampersand, punctuation, casing', () => {
   assert.equal(a.normalizeName('Köln'), 'koln');
   assert.equal(a.normalizeName('AT&T'), 'atandt');
+  assert.equal(a.normalizeName('Tom\u00e1s Barrios Vera'), 'tomas barrios vera');
   assert.equal(a.normalizeName('St. George'), 'st george');
   assert.equal(a.normalizeName('  Multiple   Spaces '), 'multiple spaces');
   assert.equal(a.normalizeName(null), '');
@@ -155,6 +156,63 @@ test('scoreCandidate accepts a strong same-time same-comp candidate', () => {
   assert.ok(s.score >= 75);
 });
 
+test('scoreCandidate accepts tennis players with safe extra trailing surname tokens', () => {
+  a.__control.setNow(NOW);
+  const m = liveMatch({
+    team1: 'Paul Jubb',
+    team2: 'Tomas Barrios',
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    competition: 'Plovdiv 2026(Challenger)',
+    startTimestamp: String(Date.UTC(2026, 5, 24, 12, 0, 0))
+  });
+  const cand = {
+    providerKey: 'sofascore',
+    providerEventId: 'jubb-barrios',
+    homeName: 'Paul Jubb',
+    awayName: 'Tom\u00e1s Barrios Vera',
+    competitionName: 'Plovdiv 2026',
+    normalizedStartMs: Date.UTC(2026, 5, 24, 12, 0, 0),
+    status: '1st set',
+    anchorKind: 'torn-start',
+    offsetDays: 0
+  };
+
+  const s = a.scoreCandidate(m, cand, { nowMs: NOW });
+  assert.equal(s.accepted, true);
+  assert.ok(s.team.confidence >= a.CONFIDENCE_THRESHOLD);
+});
+
+test('scoreCandidate accepts tennis provider family-name-first and collapsed hyphen variants', () => {
+  a.__control.setNow(NOW);
+  const m = liveMatch({
+    team1: 'Soon-Woo Kwon',
+    team2: 'Arthur Gea',
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    competition: 'Wimbledon, Qualification ATP 2026 (Grand Slam)',
+    sectionType: 'live',
+    status: 'Match is in progress',
+    rawStatus: 'inprogress',
+    startTimestamp: ''
+  });
+  const cand = {
+    providerKey: 'sofascore',
+    providerEventId: 'kwon-gea',
+    homeName: 'Kwon Soonwoo',
+    awayName: 'Arthur Gea',
+    competitionName: 'Wimbledon Qualification',
+    normalizedStartMs: NOW,
+    status: '2nd set',
+    anchorKind: 'current-live',
+    offsetDays: 0
+  };
+
+  const s = a.scoreCandidate(m, cand, { nowMs: NOW });
+  assert.equal(s.accepted, true);
+  assert.ok(s.team.confidence >= a.CONFIDENCE_THRESHOLD);
+});
+
 test('scoreCandidate rejects wrong teams (team-confidence) and far time (time-window)', () => {
   a.__control.setNow(NOW);
   const m = liveMatch();
@@ -185,6 +243,113 @@ test('selectBestCandidate: picks clear winner; flags ambiguity on near-tie', () 
   const tie = a.selectBestCandidate(m, [{ ...base, providerEventId: '1' }, { ...base, providerEventId: '2' }], { nowMs: NOW });
   assert.equal(tie.resolution, null);
   assert.equal(tie.ambiguous, true);
+});
+
+test('resolveProviderMatch records top rejected candidate diagnostics', async () => {
+  const b = loadUserscript();
+  b.__control.setNow(NOW);
+  const m = liveMatch({
+    team1: 'Mathys Erhard',
+    team2: 'Inaki Montes',
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    competition: 'Plovdiv 2026(Challenger)'
+  });
+  const step = b.buildLookupStep('torn-start', Date.UTC(2026, 5, 24, 12, 0, 0), 0, 'primary', 'iso');
+  const result = await b.resolveProviderMatch(m, 'sofascore', [step], async lookup => ({
+    eventCount: 1,
+    candidates: [{
+      providerKey: 'sofascore',
+      providerEventId: 'bad-candidate',
+      queriedDate: lookup.providerDate,
+      anchorKind: lookup.anchorKind,
+      offsetDays: lookup.offsetDays,
+      normalizedStartMs: Date.UTC(2026, 5, 24, 12, 0, 0),
+      homeName: 'Paul Jubb',
+      awayName: 'Tomas Barrios',
+      competitionName: 'Plovdiv 2026',
+      status: '1st set'
+    }]
+  }));
+
+  assert.equal(result.resolution, null);
+  assert.equal(result.candidateDiagnostics.length, 1);
+  assert.equal(result.candidateDiagnostics[0].teams, 'Paul Jubb v Tomas Barrios');
+  assert.equal(result.candidateDiagnostics[0].reason, 'team-confidence');
+  assert.equal(result.candidateDiagnostics[0].tournament, 'Plovdiv 2026');
+  assert.match(b.summarizeProviderResult('SofaScore', result), /top candidate Paul Jubb v Tomas Barrios/);
+});
+
+test('resolveProviderMatch records football candidate diagnostics when provider events do not match', async () => {
+  const b = loadUserscript();
+  b.__control.setNow(NOW);
+  const m = liveMatch({
+    team1: 'Young Africans',
+    team2: 'Azam FC',
+    sport: 'Football',
+    sportKey: 'football',
+    competition: 'Premier League 2025/2026(Tanzania 1)'
+  });
+  const step = b.buildLookupStep('torn-start', Date.UTC(2026, 5, 24, 13, 0, 0), 0, 'primary', 'iso');
+  const result = await b.resolveProviderMatch(m, 'bbcsport', [step], async lookup => ({
+    eventCount: 2,
+    candidates: [{
+      providerKey: 'bbcsport',
+      providerEventId: 'bbc-football-candidate',
+      queriedDate: lookup.providerDate,
+      anchorKind: lookup.anchorKind,
+      offsetDays: lookup.offsetDays,
+      normalizedStartMs: Date.UTC(2026, 5, 24, 13, 0, 0),
+      homeName: 'Dodoma Jiji FC',
+      awayName: 'JKT Tanzania',
+      competitionName: 'Premier League',
+      status: 'inprogress'
+    }]
+  }));
+
+  assert.equal(result.resolution, null);
+  assert.equal(result.candidateDiagnostics.length, 1);
+  assert.equal(result.candidateDiagnostics[0].providerKey, 'bbcsport');
+  assert.equal(result.candidateDiagnostics[0].teams, 'Dodoma Jiji FC v JKT Tanzania');
+  assert.match(b.summarizeProviderResult('BBC Sport', result), /events found/);
+  assert.match(b.summarizeProviderResult('BBC Sport', result), /top candidate Dodoma Jiji FC v JKT Tanzania/);
+});
+
+test('resolveProviderMatch records Torn-live/provider-scheduled contradictions', async () => {
+  const b = loadUserscript();
+  b.__control.setNow(NOW);
+  const m = liveMatch({
+    team1: 'Alina Korneeva',
+    team2: 'Andrea Lazaro Garcia',
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    sectionType: 'live',
+    status: '1st Set',
+    rawStatus: 'inprogress',
+    startTimestamp: String(Date.UTC(2026, 5, 24, 12, 0, 0)),
+    competition: 'Wimbledon, Qualification WTA 2026(Grand Slam)'
+  });
+  const step = b.buildLookupStep('torn-start', Date.UTC(2026, 5, 24, 12, 0, 0), 0, 'primary', 'iso');
+  const result = await b.resolveProviderMatch(m, 'sofascore', [step], async lookup => ({
+    eventCount: 1,
+    candidates: [{
+      providerKey: 'sofascore',
+      providerEventId: 'scheduled-candidate',
+      queriedDate: lookup.providerDate,
+      anchorKind: lookup.anchorKind,
+      offsetDays: lookup.offsetDays,
+      normalizedStartMs: Date.UTC(2026, 5, 24, 12, 0, 0),
+      homeName: 'Alina Korneeva',
+      awayName: 'Andrea Lazaro Garcia',
+      competitionName: 'Wimbledon Qualification',
+      status: 'scheduled'
+    }]
+  }));
+
+  assert.ok(result.resolution);
+  assert.equal(result.statusDiagnostics.length, 1);
+  assert.equal(result.statusDiagnostics[0].providerStatus, 'scheduled');
+  assert.equal(result.statusDiagnostics[0].tornRawStatus, 'inprogress');
 });
 
 test('isCandidateTimeCompatible: live tolerance 36h, upcoming 12h', () => {

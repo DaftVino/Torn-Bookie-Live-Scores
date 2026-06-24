@@ -52,7 +52,8 @@ const EXPORT_NAMES = [
   // candidate scoring / selection
   'isGlobalDateSport', 'isCricketMatch', 'hasCompetitionCompatibility',
   'isCandidateTimeCompatible', 'scoreCandidate', 'selectBestCandidate',
-  'makeCandidateDedupKey', 'dedupeCandidates',
+  'makeCandidateDedupKey', 'dedupeCandidates', 'candidateDiagnostic',
+  'topCandidateDiagnostics', 'isCandidateScheduledStatus',
   // lookup plans
   'buildLookupStep', 'dedupeLookupPlan', 'buildOffsetPlan',
   'buildSofascoreLookupPlan', 'buildDateBucketPlan', 'buildTheScorePlan',
@@ -96,7 +97,10 @@ const EXPORT_NAMES = [
   'deepMergeSettings', 'isRenderOnlySetting',
   'sanitizeDebugText', 'sanitizeDebugValue', 'isSensitiveDebugKey', 'limitDebugString',
   'escapeRegExp',
-  'buildDebugReport', 'recordDebugEvent',
+  'buildDebugReport', 'getPanelScrollMetrics', 'recordDebugEvent',
+  'recordByokUsage', 'loadByokUsageLedger', 'clearByokUsageLedger',
+  'getByokUsageSummary', 'updateByokQuotaState', 'isByokQuotaExhausted',
+  'getByokQuotaDisplayRows', 'formatByokQuotaRow', 'renderByokQuotaBlock',
   'getUrlHostPath', 'updateNetworkStats', 'captureResponseShape',
   'networkStats', 'networkSamples',
   // caching primitives
@@ -109,12 +113,15 @@ const EXPORT_NAMES = [
   'TEAM_ALIASES', 'PROVIDER_PRIORITY',
   'SOURCE_ICONS',
   'SOFASCORE_SPORT_SLUGS', 'LIVESCORE_SPORT_SLUGS', 'THESCORE_SPORT_SLUGS',
-  'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS',
+  'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS', 'TENNIS_LEAGUE_IDS',
   // ESPNcricinfo cricket provider
   'ESPNCRICINFO_BASE', 'buildCricinfoPlan', '_findEspnCricinfo',
   // API-Sports BYOK
   'getApiSportsKey', 'setApiSportsKey', 'removeApiSportsKey', 'hasApiSportsKey', 'maskApiSportsKey',
-  'APISPORTS_ENDPOINTS', '_findApiSports',
+  'APISPORTS_ENDPOINTS', 'apiFootballParserDiagnostic', '_findApiSports', '_findApiFootball',
+  // PandaScore / odds BYOK
+  'getPandaScoreToken', 'setPandaScoreToken', 'removePandaScoreToken', 'hasPandaScoreToken',
+  '_findPandaScore', 'setOddsApiKey', 'removeOddsApiKey', 'hasOddsApiKey', 'pullBetPanelData',
   // Tennis ESPN provider
   '_findEspn', '_findEspnTennis'
 ];
@@ -237,6 +244,7 @@ function makeSandbox(options = {}) {
       gmRequests,
       gmOpenedTabs,
       window: windowStub,
+      document: documentStub,
       listeners
     }
   };
