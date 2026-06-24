@@ -107,6 +107,22 @@ test('renderSportGroups groups multiple sports and renders one header each', () 
   assert.match(html, /Hockey/);
 });
 
+test('powered-by sources use real provider icons and never fall back to Torn', () => {
+  assert.equal(a.SOURCE_ICONS.espncricinfo, a.SOURCE_ICONS.espn);
+  assert.match(a.SOURCE_ICONS.apisports, /ANd9GcS3ctH13s5tLNx9ie7nSukNeA5UdxCK8ttBRPVKFgT1aQ/);
+  assert.equal(a.SOURCE_ICONS.apifootball, a.SOURCE_ICONS.apisports);
+
+  assert.equal(a.renderPoweredBySources(['torn']), '');
+  assert.equal(a.getActiveSources([], []).length, 0);
+
+  const html = a.renderPoweredBySources(['espncricinfo', 'apisports', 'apifootball']);
+  assert.match(html, /tm-bookie-source-espncricinfo/);
+  assert.match(html, /tm-bookie-source-apisports/);
+  assert.match(html, /tm-bookie-source-apifootball/);
+  assert.doesNotMatch(html, />API-Sports</);
+  assert.doesNotMatch(html, />API-Football</);
+});
+
 test('formatGame renders a deterministic copy-tool block', () => {
   const game = { sport: 'Baseball', matchName: 'Red Sox vs Yankees', competition: 'MLB', startTime: '18:00', markets: [{ name: 'Moneyline', bets: [{ desc: 'Red Sox', odds: '2/1', mult: 'x3.0', suspended: false }, { desc: 'Yankees', odds: '1/2', mult: 'x1.5', suspended: true }] }] };
   const out = a.formatGame(game, false);

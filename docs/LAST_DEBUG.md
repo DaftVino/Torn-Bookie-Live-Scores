@@ -143,6 +143,20 @@ Each numbered step is intended to be a focused implementation/review unit with o
 
 ### Step 1 - Panel Scrolling
 
+Completed on branch `bug-fix-testing-phase-2`.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js` passed.
+- `npm.cmd test` passed: 238 tests passing.
+
+Summary:
+
+- The fixed panel is now a vertical flex container bounded to the viewport.
+- The header stays outside the scrolling area.
+- `.tm-bookie-content` is the only vertical scroll container, with `flex: 1`, `min-height: 0`, `overflow-y: auto`, and bottom padding.
+- The competing hard-coded content `max-height` was removed.
+
 Goal: no runtime max-match cap. The UI should support all rows returned by Torn and expose the full controls through scrolling.
 
 Repair direction:
@@ -185,6 +199,18 @@ Repair direction:
 2. Add the API-Sports/API-Football image URL for both `apisports` and `apifootball`.
 3. Remove `torn` from Powered By fallback behavior. If no real source is available, show no badge or hide the source list.
 4. Keep Torn odds/Bookie data references in details where they are relevant; only remove Torn from the Powered By source list.
+
+Completed:
+
+- `espncricinfo` now reuses the existing ESPN image badge.
+- `apisports` and `apifootball` now use the requested API-Sports/API-Football image URL.
+- `torn` is filtered out of Powered By rendering, and empty real-source sets hide the Powered By source list instead of falling back to Torn.
+- Torn odds/Bookie data references were left intact outside the Powered By source list.
+
+Verified:
+
+- `node --check Torn_Bookie_Live_Scores.js`
+- `npm.cmd test` from `tests` passed: `239/239`.
 
 ### Step 3 - BYOK Quota And Token Usage Display
 

@@ -74,6 +74,7 @@ const EXPORT_NAMES = [
   // bet extraction
   'normalizeBetMatch', 'extractLiveBets', 'extractUpcomingBets',
   'groupMatchesBySport', 'getActiveSources', 'getInitialHeaderSources',
+  'renderPoweredBySources',
   'hasUsableBookieData', 'getYourBetsMatches',
   // odds math
   'americanToImpliedProb', 'decimalToImpliedProb', 'oddsToImpliedProb',
@@ -106,6 +107,7 @@ const EXPORT_NAMES = [
   'uiSettings', 'DEFAULT_UI_SETTINGS', 'CONFIDENCE_THRESHOLD',
   'DAY_MS', 'HOUR_MS', 'MINUTE_MS', 'TTL_SUCCESS', 'TTL_ERROR',
   'TEAM_ALIASES', 'PROVIDER_PRIORITY',
+  'SOURCE_ICONS',
   'SOFASCORE_SPORT_SLUGS', 'LIVESCORE_SPORT_SLUGS', 'THESCORE_SPORT_SLUGS',
   'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS',
   // ESPNcricinfo cricket provider

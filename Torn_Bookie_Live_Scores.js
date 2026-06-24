@@ -385,6 +385,9 @@
     bbcsport: 'data:image/png;base64,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'
   };
 
+  SOURCE_ICONS.espncricinfo = SOURCE_ICONS.espn;
+  SOURCE_ICONS.apisports = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS3ctH13s5tLNx9ie7nSukNeA5UdxCK8ttBRPVKFgT1aQ&s';
+  SOURCE_ICONS.apifootball = SOURCE_ICONS.apisports;
   SOURCE_ICONS.pandascore = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT_iL8WcXyEf9Bdqj89D1mcNZoP5VqjqrF-4j0EDQiy3A&s=10';
 
   const SOURCE_HOME_URLS = {
@@ -2369,7 +2372,6 @@
         if (sourceKey && sourceKey !== 'torn') sourceKeys.add(sourceKey);
       });
     }
-    if (!sourceKeys.size) sourceKeys.add('torn');
     return [...sourceKeys];
   }
 
@@ -2377,7 +2379,7 @@
     const enabledSources = PROVIDER_PRIORITY.score.filter(sourceKey =>
       uiSettings.enabledProviders?.[sourceKey] !== false
     );
-    return enabledSources.length ? enabledSources : ['torn'];
+    return enabledSources;
   }
 
   // -- Per-provider async find functions -----------------------------------------
@@ -4536,7 +4538,7 @@
   // -- Panel state helpers -------------------------------------------------------
 
   function renderPoweredBySources(sourceKeys) {
-    return sourceKeys.map(sourceKey => {
+    return sourceKeys.filter(sourceKey => sourceKey && sourceKey !== 'torn').map(sourceKey => {
       const label = SOURCE_LABELS[sourceKey] || sourceKey;
       const icon = SOURCE_ICONS[sourceKey];
       if (icon) {
@@ -4552,6 +4554,7 @@
     const sourceContainer = panel.querySelector('.tm-bookie-source-list');
     if (!sourceContainer) return;
     sourceContainer.innerHTML = renderPoweredBySources(sourceKeys);
+    panel.classList.toggle('tm-no-powered-sources', !sourceContainer.innerHTML);
   }
 
   function applyPanelClasses() {
@@ -6466,6 +6469,7 @@
         </div>
         <div class="tm-bookie-content">Waiting for Torn data...</div>
       `;
+      panel.classList.toggle('tm-no-powered-sources', !getInitialHeaderSources().length);
 
       document.body.appendChild(panel);
 
@@ -6742,7 +6746,9 @@
 }
 
 #${PANEL_ID}.tm-hide-powered .tm-bookie-powered-text,
-#${PANEL_ID}.tm-hide-powered .tm-bookie-source-list {
+#${PANEL_ID}.tm-hide-powered .tm-bookie-source-list,
+#${PANEL_ID}.tm-no-powered-sources .tm-bookie-powered-text,
+#${PANEL_ID}.tm-no-powered-sources .tm-bookie-source-list {
   display: none;
 }
 
@@ -6798,7 +6804,11 @@
 #${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-sofascore,
 #${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-livescore,
 #${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-thescore,
-#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-bbcsport {
+#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-bbcsport,
+#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-espncricinfo,
+#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-apisports,
+#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-apifootball,
+#${PANEL_ID} .tm-bookie-source-icon-badge.tm-bookie-source-pandascore {
   background: transparent;
   color: inherit;
   letter-spacing: 0;
