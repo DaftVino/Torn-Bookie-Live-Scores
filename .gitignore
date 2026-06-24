@@ -1,0 +1,17 @@
+# Local planning / scratch docs
+test-docs/
+
+# Browser captures
+*.har
+*.har.gz
+
+# Local agent / IDE config
+.claude/
+.continue/
+.agents/
+.codex/
+
+# Logs / temp output
+*.log
+tmp/
+temp/
