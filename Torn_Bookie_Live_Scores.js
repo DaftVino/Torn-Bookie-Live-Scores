@@ -1,19 +1,22 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
 // @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
-// @version      2.5.3
-// @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
+// @version      2.5.7
+// @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, ESPNcricinfo, API-Football/API-Sports (BYOK), SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
 // @author       DaftVino
 // @license      MIT
 // @match        https://www.torn.com/page.php?sid=bookie*
+// @match        https://www.sofascore.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_openInTab
 // @grant        unsafeWindow
 // @connect      site.api.espn.com
 // @connect      api.sofascore.com
+// @connect      www.sofascore.com
 // @connect      prod-public-api.livescore.com
 // @connect      api.thescore.com
 // @connect      www.bbc.com
@@ -21,7 +24,11 @@
 // @connect      api.nhle.com
 // @connect      api.the-odds-api.com
 // @connect      api.pandascore.co
-// @homepage     hhttps://greasyfork.org/en/scripts/583676-torn-bookie-live-scores
+// @connect      v3.football.api-sports.io
+// @connect      v1.rugby.api-sports.io
+// @connect      v1.afl.api-sports.io
+// @connect      hs-consumer-api.espncricinfo.com
+// @homepage     https://greasyfork.org/en/scripts/583676-torn-bookie-live-scores
 // @supportURL   https://greasyfork.org/en/scripts/583676-torn-bookie-live-scores/feedback
 // @run-at       document-start
 // ==/UserScript==
@@ -49,7 +56,8 @@
    *
    * External domains contacted (configurable in Settings → Score Sources):
    *   ESPN        → site.api.espn.com       (enabled by default)
-   *   SofaScore   → api.sofascore.com       (enabled by default)
+   *   SofaScore   → www.sofascore.com       (enabled by default; may briefly
+   *                  open an inactive SofaScore tab to refresh its public API token)
    *   LiveScore   → prod-public-api.livescore.com (enabled by default)
    *   TheScore    → api.thescore.com        (disabled by default)
    *   BBC Sport   → www.bbc.com             (disabled by default)
@@ -65,7 +73,7 @@
   const DETAILS_ID  = 'tm-bookie-details-popout';
   const DEBUG_REPORT_NOTICE_ID = 'tm-bookie-debug-report-notice';
   const SETTINGS_KEY = 'tmBookieScoresUiSettings';
-  const SCRIPT_VERSION = '2.1.0';
+  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.5.7';
   const SCRIPT_NAMESPACE = 'https://greasyfork.org/users/daftvino';
 
   const PANEL_WIDTH   = 360;  // must match #PANEL_ID width in CSS
@@ -178,6 +186,167 @@
     return getPandaScoreToken().length > 0;
   }
 
+  // -- API-Sports (api-sports.io) BYOK configuration ----------------------------
+
+  const APISPORTS_KEY_STORE = 'tmBookieApiSportsKey';
+
+  function getApiSportsKey() {
+    try { return GM_getValue(APISPORTS_KEY_STORE, '') || ''; }
+    catch (_) { return ''; }
+  }
+
+  function setApiSportsKey(k) {
+    try { GM_setValue(APISPORTS_KEY_STORE, String(k || '')); }
+    catch (_) {}
+  }
+
+  function removeApiSportsKey() {
+    try { GM_deleteValue(APISPORTS_KEY_STORE); }
+    catch (_) {}
+  }
+
+  function maskApiSportsKey(k) {
+    const key = String(k || '');
+    if (!key) return '';
+    if (key.length <= 8) return '****';
+    return `${key.slice(0, 4)}...${key.slice(-2)}`;
+  }
+
+  function hasApiSportsKey() {
+    return getApiSportsKey().length > 0;
+  }
+
+  // -- SofaScore self-healing x-requested-with token ----------------------------
+
+  const SOFASCORE_XRW_STORE = 'sofascore_xrw';
+  const SOFASCORE_XRW_TS_STORE = 'sofascore_xrw_ts';
+  const SOFASCORE_XRW_REFRESH_TS_STORE = 'sofascore_xrw_refresh_ts';
+  const SOFASCORE_XRW_FALLBACK = 'e06c91';
+  const SOFASCORE_XRW_REFRESH_COOLDOWN_MS = 6 * HOUR_MS;
+  const SOFASCORE_REFRESH_URL = 'https://www.sofascore.com/#tbls-token-refresh';
+
+  function getSofascoreToken() {
+    try { return GM_getValue(SOFASCORE_XRW_STORE, SOFASCORE_XRW_FALLBACK) || SOFASCORE_XRW_FALLBACK; }
+    catch (_) { return SOFASCORE_XRW_FALLBACK; }
+  }
+
+  function getSofascoreTokenTimestamp() {
+    try { return Number(GM_getValue(SOFASCORE_XRW_TS_STORE, 0)) || 0; }
+    catch (_) { return 0; }
+  }
+
+  function setSofascoreToken(value, now = Date.now()) {
+    const token = String(value || '').trim();
+    if (!token) return false;
+    try {
+      GM_setValue(SOFASCORE_XRW_STORE, token);
+      GM_setValue(SOFASCORE_XRW_TS_STORE, Number(now) || Date.now());
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function captureSofascoreRequestedWith(requestUrl, headerName, headerValue, now = Date.now()) {
+    const url = String(requestUrl || '');
+    const name = String(headerName || '').toLowerCase();
+    if (!url.includes('/api/v1/') || name !== 'x-requested-with') return false;
+    return setSofascoreToken(headerValue, now);
+  }
+
+  function isSofascoreContext() {
+    try { return location.hostname === 'www.sofascore.com' || location.hostname === 'sofascore.com'; }
+    catch (_) { return false; }
+  }
+
+  function isSofascoreTokenRefreshContext() {
+    try { return String(location.hash || '') === '#tbls-token-refresh'; }
+    catch (_) { return false; }
+  }
+
+  function refreshSofascoreToken(now = Date.now()) {
+    let last = 0;
+    try { last = Number(GM_getValue(SOFASCORE_XRW_REFRESH_TS_STORE, 0)) || 0; }
+    catch (_) {}
+    if (last && now - last < SOFASCORE_XRW_REFRESH_COOLDOWN_MS) {
+      recordDebugEvent('provider-fetch-meta', {
+        provider: 'sofascore',
+        tokenRefreshQueued: false,
+        cooldownRemainingMs: SOFASCORE_XRW_REFRESH_COOLDOWN_MS - (now - last)
+      });
+      return false;
+    }
+    try {
+      GM_setValue(SOFASCORE_XRW_REFRESH_TS_STORE, now);
+      if (typeof GM_openInTab === 'function') {
+        GM_openInTab(SOFASCORE_REFRESH_URL, { active: false });
+        recordDebugEvent('provider-fetch-meta', { provider: 'sofascore', tokenRefreshQueued: true });
+        return true;
+      }
+    } catch (error) {
+      recordDebugEvent('provider-fetch-meta', { provider: 'sofascore', tokenRefreshQueued: false, error: error?.message || error });
+    }
+    return false;
+  }
+
+  function isSofascoreTokenRejection(board) {
+    if (!board) return true;
+    const err = String(board.error || '').toLowerCase();
+    return !!err && (err.includes('403') || err.includes('request failed') || err.includes('forbidden') || err.includes('challenge'));
+  }
+
+  function installSofascoreTokenCapture() {
+    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    if (!win) return;
+
+    let capturedFreshToken = false;
+    const closeAfterCapture = () => {
+      if (!isSofascoreTokenRefreshContext()) return;
+      try { window.close(); } catch (_) {}
+    };
+    const captureAndMaybeClose = (url, name, value) => {
+      if (captureSofascoreRequestedWith(url, name, value)) {
+        capturedFreshToken = true;
+        closeAfterCapture();
+      }
+      return capturedFreshToken;
+    };
+
+    const originalOpen = win.XMLHttpRequest?.prototype?.open;
+    const originalSetRequestHeader = win.XMLHttpRequest?.prototype?.setRequestHeader;
+    if (originalOpen && originalSetRequestHeader) {
+      win.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        this.__tmBookieSofascoreUrl = String(url || '');
+        return originalOpen.call(this, method, url, ...rest);
+      };
+      win.XMLHttpRequest.prototype.setRequestHeader = function (name, value, ...rest) {
+        captureAndMaybeClose(this.__tmBookieSofascoreUrl, name, value);
+        return originalSetRequestHeader.call(this, name, value, ...rest);
+      };
+    }
+
+    const originalFetch = win.fetch;
+    if (typeof originalFetch === 'function') {
+      win.fetch = function (input, init = {}) {
+        try {
+          const url = String(input?.url || input || '');
+          const headers = init?.headers;
+          if (headers instanceof Headers) {
+            captureAndMaybeClose(url, 'x-requested-with', headers.get('x-requested-with'));
+          } else if (Array.isArray(headers)) {
+            for (const [name, value] of headers) captureAndMaybeClose(url, name, value);
+          } else if (headers && typeof headers === 'object') {
+            for (const [name, value] of Object.entries(headers)) captureAndMaybeClose(url, name, value);
+          }
+          if (typeof Request !== 'undefined' && input instanceof Request) {
+            captureAndMaybeClose(input.url, 'x-requested-with', input.headers.get('x-requested-with'));
+          }
+        } catch (_) {}
+        return originalFetch.apply(this, arguments);
+      };
+    }
+  }
+
   // -- Sports excluded from score lookup -----------------------------------------
 
   const EXCLUDED_SPORT_KEYS = new Set([
@@ -197,10 +366,13 @@
 
   const SOURCE_LABELS = {
     espn:      'ESPN',
+    espncricinfo:'ESPNcricinfo',
     sofascore: 'SofaScore',
     livescore: 'LiveScore',
     thescore:  'TheScore',
     bbcsport:  'BBC Sport',
+    apisports: 'API-Sports',
+    apifootball:'API-Football',
     pandascore:'PandaScore',
     torn:      'Torn'
   };
@@ -217,10 +389,13 @@
 
   const SOURCE_HOME_URLS = {
     espn:      'https://www.espn.com/',
+    espncricinfo:'https://www.espncricinfo.com/',
     sofascore: 'https://www.sofascore.com/',
     livescore: 'https://www.livescore.com/',
     thescore:  'https://www.thescore.com/',
     bbcsport:  'https://www.bbc.com/sport',
+    apisports: 'https://www.api-sports.io/',
+    apifootball:'https://www.api-football.com/',
     pandascore:'https://pandascore.co/'
   };
 
@@ -240,11 +415,24 @@
   const ESPN_WEB_SPORT_SLUGS = {
     baseball_mlb:   'mlb',
     soccer_world:   'soccer',
+    soccer_fifa_cwc:'soccer',
+    soccer_aus_aleague:'soccer',
+    soccer_nor_elite:'soccer',
+    soccer_uefa_champions:'soccer',
+    soccer_eng_pl:  'soccer',
+    soccer_esp_laliga:'soccer',
+    soccer_ita_seriea:'soccer',
+    soccer_bra_seriea:'soccer',
+    soccer_ger_bundesliga:'soccer',
+    soccer_fra_ligue1:'soccer',
+    soccer_usa_mls: 'soccer',
+    soccer_mex_ligamx:'soccer',
     hockey_nhl:     'nhl',
     basketball_nba: 'nba',
     basketball_wnba:'wnba',
     football_nfl:   'nfl',
-    football_cfl:   'cfl'
+    football_cfl:   'cfl',
+    tennis_all:     'tennis'
   };
 
   function safeExternalSourceUrl(url) {
@@ -322,7 +510,9 @@
 
   const SUPPORTED_PROVIDER_SETTINGS = [
     ['espn',      'ESPN'],
+    ['espncricinfo', 'ESPNcricinfo'],
     ['sofascore', 'SofaScore'],
+    ['apisports', 'API-Sports'],
     ['livescore', 'LiveScore'],
     ['thescore',  'TheScore'],
     ['bbcsport',  'BBC Sport'],
@@ -334,24 +524,52 @@
   const ESPN_ENDPOINTS = {
     baseball_mlb:      'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard',
     soccer_world:      'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard',
+    soccer_fifa_cwc:   'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.cwc/scoreboard',
+    soccer_aus_aleague:'https://site.api.espn.com/apis/site/v2/sports/soccer/aus.1/scoreboard',
+    soccer_nor_elite:  'https://site.api.espn.com/apis/site/v2/sports/soccer/nor.1/scoreboard',
+    // C2-FIX: a handful of high-value, reliably-free ESPN soccer leagues (free-first
+    // optimization). api-football (Phase A) covers the long tail of leagues by date, so a
+    // league not mapped here still resolves there. A wrong slug just yields no team match
+    // and falls through, never a false positive.
+    soccer_uefa_champions:'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard',
+    soccer_eng_pl:     'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
+    soccer_esp_laliga: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard',
+    soccer_ita_seriea: 'https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard',
+    soccer_bra_seriea: 'https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard',
+    soccer_ger_bundesliga:'https://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard',
+    soccer_fra_ligue1: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard',
+    soccer_usa_mls:    'https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard',
+    soccer_mex_ligamx: 'https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard',
     hockey_ahl:        'https://site.api.espn.com/apis/site/v2/sports/hockey/ahl/scoreboard',
     hockey_nhl:        'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard',
     basketball_nba:    'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
     basketball_wnba:   'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard',
     football_nfl:      'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard',
-    football_cfl:      'https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard'
+    football_cfl:      'https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard',
+    tennis_all:        'https://site.api.espn.com/apis/site/v2/sports/tennis/all/scoreboard',
+    rugby_league_nrl:  'https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard',
+    australian_football_afl: 'https://site.api.espn.com/apis/site/v2/sports/australian-football/afl/scoreboard'
   };
+
+  // Verified leagueIds for the per-tournament tennis/all/scoreboard endpoint.
+  // eventId is always ${id}-${currentYear}. Add others as confirmed.
+  const TENNIS_LEAGUE_IDS = [
+    188, // Wimbledon
+    444, // Eastbourne
+    637, // Mallorca
+    636, // Bad Homburg
+    635  // Berlin
+  ];
 
   // -- SofaScore sport slugs -----------------------------------------------------
 
   const SOFASCORE_SPORT_SLUGS = {
+    football:             'football',
     tennis:               'tennis',
     badminton:            'badminton',
-    cricket:              'cricket',
     rugby:                'rugby',
     'rugby-league':       'rugby-league',
     'australian-football':'australian-football',
-    football:             'football',
     hockey:               'ice-hockey',
     basketball:           'basketball',
     'american-football':  'american-football',
@@ -488,9 +706,12 @@
       tennis:                true,
       valorant:              false
     },
+    apiSportsRefreshMode: 'manual',
     enabledProviders: {
       espn:      true,
       sofascore: true,
+      apisports: true,
+      espncricinfo: true,
       livescore: true,
       thescore:  false,
       bbcsport:  false,
@@ -512,6 +733,7 @@
   let settingsCollapsed   = true;
   let latestOddsQuota     = null;
   let latestPandaQuota    = null;
+  let latestApiSportsQuota = {};
 
   let activeDetailsMatchKey  = null;
   let activeDetailsFallbackMatch = null;
@@ -527,6 +749,8 @@
   const inFlightRequests  = new Map();
   const debugEventBuffer  = [];
   const DEBUG_EVENT_LIMIT = 200;
+  const networkStats   = new Map(); // host → { lastStatus, lastKind, lastMs, lastOkAt, lastErrAt, okCount, errCount }
+  const networkSamples = new Map(); // host → shape descriptor
 
   const collapsedSportGroups = { live: {}, upcoming: {} };
 
@@ -545,7 +769,7 @@
 
   function sanitizeDebugText(value) {
     let text = limitDebugString(value, 3000);
-    const knownSecrets = [getOddsApiKey(), getPandaScoreToken()].filter(secret => String(secret || '').length >= 4);
+    const knownSecrets = [getOddsApiKey(), getPandaScoreToken(), getApiSportsKey()].filter(secret => String(secret || '').length >= 4);
     for (const secret of knownSecrets) {
       text = text.replace(new RegExp(escapeRegExp(secret), 'g'), '[redacted-secret]');
     }
@@ -592,6 +816,60 @@
       return out;
     }
     return sanitizeDebugText(value);
+  }
+
+  function getUrlHostPath(url) {
+    try {
+      const u = new URL(url);
+      return { host: u.hostname, path: u.pathname };
+    } catch (_) {
+      return { host: 'unknown', path: '' };
+    }
+  }
+
+  function updateNetworkStats(host, { status, kind, ms, ok }) {
+    const now = Date.now();
+    const prev = networkStats.get(host) || { okCount: 0, errCount: 0, lastOkAt: null, lastErrAt: null };
+    networkStats.set(host, {
+      lastStatus: status,
+      lastKind: kind,
+      lastMs: ms,
+      lastOkAt: ok ? now : prev.lastOkAt,
+      lastErrAt: ok ? prev.lastErrAt : now,
+      okCount: prev.okCount + (ok ? 1 : 0),
+      errCount: prev.errCount + (ok ? 0 : 1)
+    });
+  }
+
+  function captureResponseShape(host, data) {
+    try {
+      let shape;
+      if (Array.isArray(data)) {
+        shape = { type: 'array', length: data.length,
+          firstKeys: data.length > 0 && data[0] && typeof data[0] === 'object' ? Object.keys(data[0]).slice(0, 15) : [] };
+      } else if (data && typeof data === 'object') {
+        const topKeys = Object.keys(data).slice(0, 10);
+        const nested = {};
+        for (const k of topKeys) {
+          const v = data[k];
+          if (Array.isArray(v)) {
+            nested[k] = `array:${v.length}` + (v.length > 0 && v[0] && typeof v[0] === 'object'
+              ? `[${Object.keys(v[0]).slice(0, 8).join(',')}]` : '');
+          } else if (v && typeof v === 'object') {
+            nested[k] = Object.keys(v).slice(0, 8);
+          } else {
+            nested[k] = typeof v;
+          }
+        }
+        shape = { type: 'object', keys: topKeys, nested };
+      } else {
+        shape = { type: typeof data };
+      }
+      if (uiSettings.enableDebugMode) {
+        shape.valueSample = sanitizeDebugValue(Array.isArray(data) ? data[0] : data);
+      }
+      networkSamples.set(host, shape);
+    } catch (_) {}
   }
 
   function recordDebugEvent(type, details = {}) {
@@ -658,7 +936,7 @@
 
   function buildDebugReport() {
     const activeMatch = getActiveDetailsMatch();
-    return sanitizeDebugValue({
+    const report = sanitizeDebugValue({
       reportType: 'Live Scores Panel Debug Report',
       generatedAt: new Date().toISOString(),
       privacyNotice: 'Share only with the Live Scores Panel script developer. This report excludes passwords, Torn API keys, provider keys/tokens, cookies, Torn account data, bet amounts, bet selections, and raw Torn/provider responses.',
@@ -704,7 +982,14 @@
         oddsRegion: getOddsRegion(),
         oddsMarketsMode: getOddsMarketsMode(),
         hasOddsApiKey: hasOddsApiKey(),
-        hasPandaScoreToken: hasPandaScoreToken()
+        hasPandaScoreToken: hasPandaScoreToken(),
+        hasApiSportsKey: hasApiSportsKey(),
+        apiSportsQuota: latestApiSportsQuota,
+        sofascoreTokenAgeMs: getSofascoreTokenTimestamp() ? Date.now() - getSofascoreTokenTimestamp() : null,
+        sofascoreLastRefreshMs: (() => {
+          try { return Number(GM_getValue(SOFASCORE_XRW_REFRESH_TS_STORE, 0)) || 0; }
+          catch (_) { return 0; }
+        })()
       },
       panelState: {
         lastUpdatedText,
@@ -734,6 +1019,14 @@
       },
       debugEvents: debugEventBuffer.slice()
     });
+    // Network section gets its own depth-0 sanitization to avoid depth-4 truncation
+    report.network = sanitizeDebugValue({
+      byHost: Array.from(networkStats.entries()).map(([h, s]) => ({ host: h, ...s })),
+      recent: debugEventBuffer.filter(e => e.type === 'network').slice(-60)
+        .map(e => ({ at: e.at, type: e.type, ...(typeof e.details === 'object' && e.details !== null ? e.details : {}) })),
+      samples: Object.fromEntries(Array.from(networkSamples.entries()))
+    });
+    return report;
   }
 
   // -- Settings persistence ------------------------------------------------------
@@ -884,6 +1177,11 @@
 
   // -- XHR / fetch interception --------------------------------------------------
 
+  if (isSofascoreContext()) {
+    installSofascoreTokenCapture();
+    return;
+  }
+
   const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
   const originalFetch = pageWindow.fetch;
@@ -895,7 +1193,7 @@
       if (url.includes('sid=bookieApi')) {
         response.clone().text().then(text => {
           tryParseBookieResponse(text, `page fetch: ${url}`);
-        });
+        }).catch(() => {});
       }
     } catch (error) {
       recordDebugEvent('page-fetch-capture-failed', { message: error?.message || error });
@@ -953,13 +1251,21 @@
   // -- GM fetch wrapper ----------------------------------------------------------
 
   function gmFetchJson(url, extraHeaders = {}) {
+    const { host, path: urlPath } = getUrlHostPath(url);
+    const startMs = Date.now();
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
         url,
         headers: { Accept: 'application/json, text/plain, */*', ...extraHeaders },
+        timeout: 12000,
         onload: response => {
-          if (response.status < 200 || response.status >= 300) {
+          const ms = Date.now() - startMs;
+          const ok = response.status >= 200 && response.status < 300;
+          const hdrs = parseResponseHeaders(response.responseHeaders);
+          recordDebugEvent('network', { host, path: urlPath, status: response.status, ok, kind: 'http', ms, bytes: (response.responseText || '').length, contentType: hdrs['content-type'] || '' });
+          updateNetworkStats(host, { status: response.status, kind: 'http', ms, ok });
+          if (!ok) {
             reject(new Error(`Request failed ${response.status}: ${url}`));
             return;
           }
@@ -969,8 +1275,18 @@
             resolve(response.responseText);
           }
         },
-        onerror:   () => reject(new Error(`Network error: ${url}`)),
-        ontimeout: () => reject(new Error(`Timeout: ${url}`))
+        onerror: () => {
+          const ms = Date.now() - startMs;
+          recordDebugEvent('network', { host, path: urlPath, status: 0, ok: false, kind: 'network', ms, bytes: 0, contentType: '' });
+          updateNetworkStats(host, { status: 0, kind: 'network', ms, ok: false });
+          reject(new Error(`Network error: ${url}`));
+        },
+        ontimeout: () => {
+          const ms = Date.now() - startMs;
+          recordDebugEvent('network', { host, path: urlPath, status: 0, ok: false, kind: 'timeout', ms, bytes: 0, contentType: '' });
+          updateNetworkStats(host, { status: 0, kind: 'timeout', ms, ok: false });
+          reject(new Error(`Timeout: ${url}`));
+        }
       });
     });
   }
@@ -986,25 +1302,45 @@
   }
 
   function gmFetchJsonWithMeta(url, extraHeaders = {}, safeLabel = 'request') {
+    const { host, path: urlPath } = getUrlHostPath(url);
+    const startMs = Date.now();
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
         url,
         headers: { Accept: 'application/json, text/plain, */*', ...extraHeaders },
+        timeout: 12000,
         onload: response => {
           const headers = parseResponseHeaders(response.responseHeaders);
-          if (response.status < 200 || response.status >= 300) {
+          const ms = Date.now() - startMs;
+          const ok = response.status >= 200 && response.status < 300;
+          recordDebugEvent('network', { host, path: urlPath, status: response.status, ok, kind: 'http', ms, bytes: (response.responseText || '').length, contentType: headers['content-type'] || '' });
+          updateNetworkStats(host, { status: response.status, kind: 'http', ms, ok });
+          if (!ok) {
             reject(new Error(`${safeLabel} failed with status ${response.status}`));
             return;
           }
+          let data;
           try {
-            resolve({ data: JSON.parse(response.responseText), headers });
+            data = JSON.parse(response.responseText);
           } catch (_) {
-            resolve({ data: response.responseText, headers });
+            data = response.responseText;
           }
+          captureResponseShape(host, data);
+          resolve({ data, headers });
         },
-        onerror:   () => reject(new Error(`${safeLabel} network error`)),
-        ontimeout: () => reject(new Error(`${safeLabel} timeout`))
+        onerror: () => {
+          const ms = Date.now() - startMs;
+          recordDebugEvent('network', { host, path: urlPath, status: 0, ok: false, kind: 'network', ms, bytes: 0, contentType: '' });
+          updateNetworkStats(host, { status: 0, kind: 'network', ms, ok: false });
+          reject(new Error(`${safeLabel} network error`));
+        },
+        ontimeout: () => {
+          const ms = Date.now() - startMs;
+          recordDebugEvent('network', { host, path: urlPath, status: 0, ok: false, kind: 'timeout', ms, bytes: 0, contentType: '' });
+          updateNetworkStats(host, { status: 0, kind: 'timeout', ms, ok: false });
+          reject(new Error(`${safeLabel} timeout`));
+        }
       });
     });
   }
@@ -1189,6 +1525,9 @@
   function getEnrichment(match) {
     const matchKey = makeMatchKey(match);
     if (!enrichmentCache.has(matchKey)) {
+      if (enrichmentCache.size >= 50) {
+        enrichmentCache.delete(enrichmentCache.keys().next().value);
+      }
       enrichmentCache.set(matchKey, makeEnrichment(match));
     }
     return syncEnrichmentFromMatch(enrichmentCache.get(matchKey), match);
@@ -1267,17 +1606,37 @@
     const aliasesB = TEAM_ALIASES[nb] || [];
     if (aliasesB.some(al => normalizeName(al) === na)) return 95;
 
-    // Containment with minimum-length guard (prevents "mexico" matching "new mexico")
-    const MIN_LEN = 5;
-    if (na.length >= MIN_LEN && nb.length >= MIN_LEN) {
-      const shorter = na.length <= nb.length ? na : nb;
-      const longer  = na.length <= nb.length ? nb : na;
-      if (longer.includes(shorter)) return 80;
+    // Conservative token-sequence containment. Raw character containment used to grant
+    // 80 whenever a >=5-char name was a substring of a longer one ("mexico" in
+    // "new mexico", "united" in "manchester united", "arsenal" in "arsenal reserves").
+    // Now 80 is granted only when the shorter name's full token sequence appears
+    // contiguously in the longer name AND every leftover token is a neutral club affix
+    // (fc/cf/sc/club). A disqualifying qualifier ("new"/"reserves"/"b"/"ii"/"w"/...), a
+    // substantive extra token ("manchester"), or a generic single-token name
+    // ("united"/"city") falls through to the Jaccard path below, which scores these
+    // under CONFIDENCE_THRESHOLD.
+    const NEUTRAL_AFFIX_TOKENS = new Set(['fc', 'cf', 'sc', 'club']);
+    const GENERIC_SINGLE_TOKENS = new Set(['united', 'city', 'town', 'athletic', 'sporting', 'racing', 'real']);
+    const tokensA = na.split(' ').filter(Boolean);
+    const tokensB = nb.split(' ').filter(Boolean);
+    const [shortToks, longToks] = tokensA.length <= tokensB.length ? [tokensA, tokensB] : [tokensB, tokensA];
+    if (shortToks.length && !(shortToks.length === 1 && GENERIC_SINGLE_TOKENS.has(shortToks[0]))) {
+      for (let start = 0; start + shortToks.length <= longToks.length; start++) {
+        let contiguous = true;
+        for (let j = 0; j < shortToks.length; j++) {
+          if (longToks[start + j] !== shortToks[j]) { contiguous = false; break; }
+        }
+        if (!contiguous) continue;
+        const leftover = longToks.filter((_, idx) => idx < start || idx >= start + shortToks.length);
+        if (leftover.every(tok => NEUTRAL_AFFIX_TOKENS.has(tok))) return 80;
+      }
     }
 
     // Word-overlap Jaccard score
-    const wa = na.split(' ').filter(w => w.length > 2);
-    const wb = nb.split(' ').filter(w => w.length > 2);
+    const jaccardQualifierTokens = new Set(['2', 'b', 'ii', 'w', 'new', 'reserve', 'reserves', 'women', 'u19', 'u21', 'u23', 'youth']);
+    const jaccardToken = w => w.length > 2 || jaccardQualifierTokens.has(w);
+    const wa = na.split(' ').filter(jaccardToken);
+    const wb = nb.split(' ').filter(jaccardToken);
     if (!wa.length || !wb.length) return 0;
     const setA = new Set(wa);
     const setB = new Set(wb);
@@ -1319,7 +1678,7 @@
   // DATE_MATCHING_CORE_START
   // -- Date matching core --------------------------------------------------------
 
-  const LIVE_STATUS_VALUES = new Set(['live', 'inplay', 'inprogress', 'running', 'started', 'playing', 'halftime', 'intermission']);
+  const LIVE_STATUS_VALUES = new Set(['live', 'inplay', 'inprogress', 'matchisinprogress', 'startsmatchisinprogress', 'running', 'started', 'playing', 'halftime', 'intermission']);
   const NON_LIVE_STATUS_VALUES = new Set(['scheduled', 'upcoming', 'notstarted', 'postponed', 'cancelled', 'canceled', 'finished', 'complete', 'completed', 'final']);
   const FINAL_STATUS_VALUES = new Set(['finished', 'complete', 'completed', 'final', 'ft', 'fulltime']);
 
@@ -1409,6 +1768,7 @@
     const dd = String(d.getUTCDate()).padStart(2, '0');
     if (format === 'espn') return `${yyyy}${mm}${dd}`;
     if (format === 'livescore') return `${dd}/${mm}/${yyyy}`;
+    if (format === 'cricinfo') return `${dd}-${mm}-${yyyy}`;
     return `${yyyy}-${mm}-${dd}`;
   }
 
@@ -1702,8 +2062,14 @@
   // -- Provider response cache ---------------------------------------------------
 
   async function fetchWithCache(cacheKey, fetchFn, successTtl = TTL_SUCCESS, errorTtl = TTL_ERROR) {
+    const now = Date.now();
+    if (providerCache.size > 200) {
+      for (const [key, value] of providerCache) {
+        if (value.expiry < now) providerCache.delete(key);
+      }
+    }
     const cached = providerCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiry) {
+    if (cached && now < cached.expiry) {
       recordDebugEvent('provider-cache-hit', { cacheKey });
       debugLog(`Cache hit: ${cacheKey}`);
       return cached.data;
@@ -1732,6 +2098,14 @@
 
     inFlightRequests.set(cacheKey, promise);
     return promise;
+  }
+
+  // Read-only peek at the provider cache — returns the cached payload if still
+  // fresh, else null. Used by the api-sports manual-only refresh gate so a cached
+  // board can keep rendering at 0 token cost without triggering a refetch.
+  function peekProviderCache(cacheKey) {
+    const c = providerCache.get(cacheKey);
+    return c && Date.now() < c.expiry ? c.data : null;
   }
 
   // -- Sport helpers -------------------------------------------------------------
@@ -1801,18 +2175,22 @@
     if (detectEsportsGameKey(match)) return 'pandascore';
 
     if (sport === 'baseball' && stage.includes('mlb')) return 'espn';
-    if (sport === 'football' && competition.includes('world cup')) return 'espn';
+    if (sport === 'football' && getEspnKey(match)) return 'espn';
     if (sport === 'hockey' && (stage.includes('ahl') || competition.includes('ahl'))) return 'espn';
     if (sport === 'hockey' && (stage.includes('nhl') || competition.includes('nhl'))) return 'espn';
     if (sport === 'basketball' && (stage.includes('wnba') || competition.includes('wnba'))) return 'espn';
     if (sport === 'basketball' && (stage.includes('nba') || competition.includes('nba'))) return 'espn';
     if (sport === 'american football' && (stage.includes('nfl') || competition.includes('nfl'))) return 'espn';
+    if (sport === 'australian football' && getEspnKey(match)) return 'espn';
+    if (sport === 'rugby league' && getEspnKey(match)) return 'espn';
+
+    if (sport === 'tennis' || alias === 'tennis') return 'espn';
+    if (sport === 'cricket' || alias === 'cricket') return 'espncricinfo';
+    if (sport === 'rugby' || alias === 'rugby') return 'apisports';
 
     if (
-      sport === 'tennis' || sport === 'badminton' || sport === 'australian football' ||
-      sport === 'rugby league' || sport === 'rugby' || sport === 'cricket' ||
-      alias === 'tennis' || alias === 'badminton' || alias === 'australian-football' ||
-      alias === 'rugby-league' || alias === 'rugby' || alias === 'cricket'
+      sport === 'badminton' ||
+      alias === 'badminton'
     ) return 'sofascore';
 
     return 'torn';
@@ -1822,24 +2200,48 @@
     const sport = normalizeName(match.sport);
     const stage = normalizeName(match.stage);
     const competition = normalizeName(match.competition);
+    const league = normalizeName(match.league);
+    const soccerLeague = `${stage} ${competition} ${league}`.trim();
 
     if (sport === 'baseball' && stage.includes('mlb')) return 'baseball_mlb';
-    if (sport === 'football' && competition.includes('world cup')) return 'soccer_world';
+    if (sport === 'football' && (soccerLeague.includes('club world cup') || soccerLeague.includes('club world championship'))) return 'soccer_fifa_cwc';
+    if (sport === 'football' && (soccerLeague.includes('world cup') || soccerLeague.includes('world championship'))) return 'soccer_world';
+    if (sport === 'football' && (soccerLeague.includes('a-league') || soccerLeague.includes('a league'))) return 'soccer_aus_aleague';
+    if (sport === 'football' && soccerLeague.includes('eliteserien')) return 'soccer_nor_elite';
+    // C2-FIX: a few high-value ESPN soccer leagues; everything else falls through to
+    // api-football. Brazil's Série A is checked before the generic Italian "serie a".
+    if (sport === 'football' && (soccerLeague.includes('uefa champions') || soccerLeague.includes('champions league'))) return 'soccer_uefa_champions';
+    if (sport === 'football' && (soccerLeague.includes('english premier') || soccerLeague.includes('premier league'))) return 'soccer_eng_pl';
+    if (sport === 'football' && (soccerLeague.includes('la liga') || soccerLeague.includes('laliga'))) return 'soccer_esp_laliga';
+    if (sport === 'football' && soccerLeague.includes('bundesliga')) return 'soccer_ger_bundesliga';
+    if (sport === 'football' && soccerLeague.includes('ligue 1')) return 'soccer_fra_ligue1';
+    if (sport === 'football' && soccerLeague.includes('serie a') && (soccerLeague.includes('brazil') || soccerLeague.includes('brasil'))) return 'soccer_bra_seriea';
+    if (sport === 'football' && soccerLeague.includes('serie a')) return 'soccer_ita_seriea';
+    if (sport === 'football' && (soccerLeague.includes('major league soccer') || (/\bmls\b/.test(soccerLeague) && !soccerLeague.includes('next pro')))) return 'soccer_usa_mls';
+    if (sport === 'football' && soccerLeague.includes('liga mx')) return 'soccer_mex_ligamx';
     if (sport === 'hockey' && (stage.includes('ahl') || competition.includes('ahl'))) return 'hockey_ahl';
     if (sport === 'hockey' && (stage.includes('nhl') || competition.includes('nhl'))) return 'hockey_nhl';
     if (sport === 'basketball' && (stage.includes('wnba') || competition.includes('wnba'))) return 'basketball_wnba';
     if (sport === 'basketball' && (stage.includes('nba') || competition.includes('nba'))) return 'basketball_nba';
     if (sport === 'american football' && (stage.includes('nfl') || competition.includes('nfl'))) return 'football_nfl';
+    if (sport === 'australian football') return 'australian_football_afl';
+    if (sport === 'rugby league') return 'rugby_league_nrl';
+    if (sport === 'tennis') return 'tennis_all';
     return null;
   }
 
   function isProviderSupportedForSport(providerKey, match) {
-    if (providerKey === 'espn')      return !!getEspnKey(match);
-    if (providerKey === 'sofascore') return !!SOFASCORE_SPORT_SLUGS[match.sportKey];
-    if (providerKey === 'livescore') return !!LIVESCORE_SPORT_SLUGS[match.sportKey];
-    if (providerKey === 'thescore')  return !!THESCORE_SPORT_SLUGS[match.sportKey];
-    if (providerKey === 'bbcsport') return !!BBC_SPORT_PATHS[match.sportKey];
-    if (providerKey === 'pandascore') return !!PANDASCORE_GAME_SLUGS[match.sportKey];
+    if (providerKey === 'espn')        return !!getEspnKey(match);
+    if (providerKey === 'espncricinfo') return match.sportKey === 'cricket' || normalizeName(match.sport) === 'cricket';
+    if (providerKey === 'apifootball')
+      return match.sportKey === 'football' && hasApiSportsKey()
+        && uiSettings.enabledProviders?.apisports !== false;
+    if (providerKey === 'apisports')   return !!APISPORTS_ENDPOINTS[match.sportKey] && hasApiSportsKey();
+    if (providerKey === 'sofascore')   return !!SOFASCORE_SPORT_SLUGS[match.sportKey];
+    if (providerKey === 'livescore')   return !!LIVESCORE_SPORT_SLUGS[match.sportKey];
+    if (providerKey === 'thescore')    return !!THESCORE_SPORT_SLUGS[match.sportKey];
+    if (providerKey === 'bbcsport')   return !!BBC_SPORT_PATHS[match.sportKey];
+    if (providerKey === 'pandascore')  return !!PANDASCORE_GAME_SLUGS[match.sportKey];
     return false;
   }
 
@@ -1856,7 +2258,7 @@
   }
 
   const PROVIDER_PRIORITY = {
-    score: ['pandascore', 'espn', 'sofascore', 'livescore', 'thescore', 'bbcsport'],
+    score: ['pandascore', 'espn', 'espncricinfo', 'sofascore', 'apifootball', 'apisports', 'livescore', 'thescore', 'bbcsport'],
     stats: {
       hockey_nhl: ['nhl', 'sofascore'],
       american_football: ['espn-reuse', 'thescore', 'sofascore'],
@@ -2180,6 +2582,7 @@
       'Accept': 'application/json',
       'Origin': 'https://www.sofascore.com',
       'Referer': 'https://www.sofascore.com/',
+      'x-requested-with': getSofascoreToken(),
       'sec-fetch-site': 'same-site',
       'sec-fetch-mode': 'cors',
       'sec-fetch-dest': 'empty'
@@ -2192,12 +2595,32 @@
       const dateStr = step.providerDate;
       const board = await fetchWithCache(
         `sofascore:${slug}:${dateStr}`,
-        () => gmFetchJson(`https://api.sofascore.com/api/v1/sport/${slug}/scheduled-events/${dateStr}`, sofascoreHeaders()),
+        () => gmFetchJson(`https://www.sofascore.com/api/v1/sport/${slug}/scheduled-events/${dateStr}`, sofascoreHeaders()),
         ttl,
         TTL_ERROR
       );
-      if (board?.error) return { errors: [board.error], candidates: [], eventCount: 0 };
-      if (!Array.isArray(board?.events)) return { parseFailures: ['SofaScore events missing'], candidates: [], eventCount: 0 };
+      if (board?.error) {
+        const queued = isSofascoreTokenRejection(board) ? refreshSofascoreToken() : false;
+        recordDebugEvent('provider-fetch-meta', {
+          provider: 'sofascore',
+          date: dateStr,
+          status: board.error,
+          tokenAgeMs: getSofascoreTokenTimestamp() ? Date.now() - getSofascoreTokenTimestamp() : null,
+          tokenRefreshQueued: queued
+        });
+        return { errors: [board.error], candidates: [], eventCount: 0 };
+      }
+      if (!Array.isArray(board?.events)) {
+        const queued = refreshSofascoreToken();
+        recordDebugEvent('provider-fetch-meta', {
+          provider: 'sofascore',
+          date: dateStr,
+          status: 'empty events',
+          tokenAgeMs: getSofascoreTokenTimestamp() ? Date.now() - getSofascoreTokenTimestamp() : null,
+          tokenRefreshQueued: queued
+        });
+        return { parseFailures: ['SofaScore events missing'], candidates: [], eventCount: 0 };
+      }
       return {
         eventCount: board.events.length,
         candidates: board.events.map(ev => candidateWithStep('sofascore', step, ev, {
@@ -2219,6 +2642,7 @@
   async function _findEspn(match) {
     const espnKey = getEspnKey(match);
     if (!espnKey) return { found: false, detail: 'ESPN: sport not mapped', unmatched: true };
+    if (espnKey === 'tennis_all') return _findEspnTennis(match);
 
     const baseUrl = ESPN_ENDPOINTS[espnKey];
     if (!baseUrl) return { found: false, detail: 'ESPN: no endpoint', unmatched: true };
@@ -2284,6 +2708,258 @@
     });
   }
 
+  async function _findEspnTennis(match) {
+    const live = isActuallyLive(match);
+    const plan = live
+      ? buildDateBucketPlan(match, 'espn', { maxRequests: 3 })
+      : dedupeLookupPlan([
+          buildLookupStep('torn-start', getMatchAnchorMs(match), 0, 'primary-anchor', 'espn'),
+          buildLookupStep('torn-start', getMatchAnchorMs(match), -1, 'tz-buffer', 'espn')
+        ].filter(Boolean));
+
+    const result = await resolveProviderMatch(match, 'espn', plan, async step => {
+      const dateStr = step.providerDate;
+      const year = dateStr.slice(0, 4);
+      // Fetch all known tournaments in parallel; each cached by (eventId, date).
+      const boards = await Promise.all(
+        TENNIS_LEAGUE_IDS.map(id =>
+          fetchWithCache(
+            `espn:tennis_all:${id}-${year}:${dateStr}`,
+            () => gmFetchJson(
+              `${ESPN_ENDPOINTS.tennis_all}?leagueId=${id}&eventId=${id}-${year}&dates=${dateStr}`
+            )
+          )
+        )
+      );
+      const candidates = [];
+      const errors = [];
+      const parseFailures = [];
+      let eventCount = 0;
+      for (const board of boards) {
+        if (board?.error) { errors.push(board.error); continue; }
+        if (!Array.isArray(board?.events)) { parseFailures.push('ESPN tennis: events missing'); continue; }
+        for (const event of board.events) {
+          // Verified shape (Wimbledon 2026): competitors[] directly on event, no groupings.
+          // Defensively also accept events[].competitions[0].competitors[].
+          const competitors = event.competitors || event.competitions?.[0]?.competitors || [];
+          if (competitors.length < 2) continue;
+          const p1 = competitors[0] || {};
+          const p2 = competitors[1] || {};
+          eventCount++;
+          candidates.push(candidateWithStep('espn', step, event, {
+            providerEventId: event.id || event.uid || '',
+            startTime: event.date || '',
+            homeName: p1.athlete?.displayName || p1.athlete?.fullName || p1.athlete?.shortName || '',
+            awayName: p2.athlete?.displayName || p2.athlete?.fullName || p2.athlete?.shortName || '',
+            homeShortName: p1.athlete?.shortName || '',
+            awayShortName: p2.athlete?.shortName || '',
+            status: event.status?.type?.shortDetail || event.status?.type?.name || '',
+            competitionName: event.name || ''
+          }));
+        }
+      }
+      return {
+        eventCount,
+        candidates,
+        ...(errors.length ? { errors } : {}),
+        ...(parseFailures.length ? { parseFailures } : {})
+      };
+    });
+
+    return scoreFromResolution(result, 'espn', 'ESPN', (candidate, pair) => {
+      const event = candidate.raw;
+      const competitors = event.competitors || event.competitions?.[0]?.competitors || [];
+      const p1 = competitors[0] || {};
+      const p2 = competitors[1] || {};
+      const p1Score = Array.isArray(p1.linescores)
+        ? p1.linescores.map(ls => ls.displayValue ?? ls.value ?? '').filter(v => v !== '').join(' ')
+        : String(p1.score ?? '');
+      const p2Score = Array.isArray(p2.linescores)
+        ? p2.linescores.map(ls => ls.displayValue ?? ls.value ?? '').filter(v => v !== '').join(' ')
+        : String(p2.score ?? '');
+      return {
+        team1Score: pair.team1IsHome ? p1Score : p2Score,
+        team2Score: pair.team1IsHome ? p2Score : p1Score,
+        detail: event.status?.type?.shortDetail || event.status?.type?.detail || '',
+        sourceUrl: buildEspnSourceUrl(candidate, 'tennis_all')
+      };
+    });
+  }
+
+  function sofascoreStatusDetail(status) {
+    const code = Number(status?.code);
+    if (code === 6 || code === 7) return 'live';
+    if (code === 100) return 'finished';
+    if (code === 60) return 'postponed';
+    if (code === 70 || code === 90) return 'canceled';
+    if (code === 0) return 'scheduled';
+    const statusDesc = status?.description || status?.type || '';
+    return typeof statusDesc === 'string' ? statusDesc : String(statusDesc);
+  }
+
+  const ESPNCRICINFO_BASE = 'https://hs-consumer-api.espncricinfo.com/v1/pages';
+
+  function buildCricinfoPlan(match) {
+    const anchorMs = getMatchAnchorMs(match);
+    const live = isActuallyLive(match);
+    const currentMs = getLiveRecoveryMs(match);
+    const baseMs = anchorMs || (live ? currentMs : null);
+    const plan = [];
+    if (live) {
+      plan.push({
+        anchorKind: anchorMs ? 'torn-start' : 'current-live',
+        anchorMs: baseMs || Date.now(),
+        offsetDays: 0,
+        reason: 'live-board',
+        providerDate: 'live',
+        requestKey: 'live'
+      });
+      plan.push({
+        anchorKind: anchorMs ? 'torn-start' : 'current-live',
+        anchorMs: baseMs || Date.now(),
+        offsetDays: 0,
+        reason: 'current-board',
+        providerDate: 'current',
+        requestKey: 'current'
+      });
+    }
+    if (baseMs) {
+      plan.push(...buildOffsetPlan(anchorMs ? 'torn-start' : 'current-live', baseMs, [0, -1, 1], 'date-board', 'cricinfo'));
+    }
+    return dedupeLookupPlan(plan).slice(0, live ? 5 : 3);
+  }
+
+  function cricinfoExtractMatches(body) {
+    if (Array.isArray(body)) return body;
+    const containers = [
+      body?.matches,
+      body?.content?.matches,
+      body?.content?.matchList?.matches,
+      body?.matchList?.matches,
+      body?.data?.matches,
+      body?.data?.content?.matches
+    ];
+    for (const value of containers) {
+      if (Array.isArray(value)) return value;
+    }
+    const groups = body?.content?.matchesByDate || body?.matchesByDate || body?.content?.groups || body?.groups;
+    if (Array.isArray(groups)) {
+      return groups.flatMap(group => group?.matches || group?.items || []).filter(Boolean);
+    }
+    return [];
+  }
+
+  function cricinfoTeamName(teamEntry) {
+    const team = teamEntry?.team || teamEntry || {};
+    return team.longName || team.name || team.displayName || '';
+  }
+
+  function cricinfoTeamShortName(teamEntry) {
+    const team = teamEntry?.team || teamEntry || {};
+    return team.abbreviation || team.shortName || team.name || '';
+  }
+
+  function cricinfoTeamScore(teamEntry) {
+    const score = teamEntry?.score || teamEntry?.scores || teamEntry?.teamScore || teamEntry?.scoreText;
+    if (typeof score === 'string' || typeof score === 'number') return String(score);
+    if (score?.display) return String(score.display);
+    if (score?.summary) return String(score.summary);
+    const innings = Array.isArray(teamEntry?.innings) ? teamEntry.innings : (Array.isArray(score?.innings) ? score.innings : []);
+    const parts = innings.map(inn => inn?.score || inn?.display || inn?.summary || inn?.runs).filter(v => v !== undefined && v !== null && String(v) !== '');
+    return parts.map(String).join(' & ');
+  }
+
+  function cricinfoEventId(item) {
+    return item?.objectId || item?.matchId || item?.id || item?.slug || '';
+  }
+
+  function cricinfoStatus(item) {
+    return item?.statusText || item?.status || item?.state || item?.stage || '';
+  }
+
+  function cricinfoSourceUrl(item) {
+    const url = item?.url || item?.href || item?.link || item?.webUrl || item?.matchUrl;
+    if (url) return url;
+    const seriesId = item?.series?.objectId || item?.seriesId || '';
+    const matchId = item?.objectId || item?.matchId || item?.id || '';
+    if (!seriesId || !matchId) return '';
+    return `https://www.espncricinfo.com/series/${encodeURIComponent(seriesId)}/match/${encodeURIComponent(matchId)}`;
+  }
+
+  async function _findEspnCricinfo(match) {
+    const plan = buildCricinfoPlan(match);
+    if (!plan.length) return { found: false, detail: 'ESPNcricinfo: no lookup date', unmatched: true };
+
+    const result = await resolveProviderMatch(match, 'espncricinfo', plan, async step => {
+      const requests = [];
+      if (step.providerDate === 'live') {
+        requests.push({ cacheKey: 'espncricinfo:matches:live', url: `${ESPNCRICINFO_BASE}/matches/live?lang=en` });
+      } else if (step.providerDate === 'current') {
+        requests.push({ cacheKey: 'espncricinfo:matches:current', url: `${ESPNCRICINFO_BASE}/matches/current?lang=en&latest=true` });
+      } else {
+        const dateStr = step.providerDate;
+        requests.push({
+          cacheKey: `espncricinfo:matches:scheduled:${dateStr}`,
+          url: `${ESPNCRICINFO_BASE}/matches/scheduled?lang=en&filterType=DATE&filterValue=${encodeURIComponent(dateStr)}`
+        });
+        requests.push({
+          cacheKey: `espncricinfo:matches:result:${dateStr}`,
+          url: `${ESPNCRICINFO_BASE}/matches/result?lang=en&filterType=DATE&filterValue=${encodeURIComponent(dateStr)}`
+        });
+      }
+
+      const boards = await Promise.all(requests.map(req =>
+        fetchWithCache(req.cacheKey, () => gmFetchJsonWithMeta(req.url, {}, 'ESPNcricinfo matches request'))
+      ));
+      const errors = [];
+      const candidates = [];
+      let eventCount = 0;
+      for (const response of boards) {
+        if (response?.error) { errors.push(response.error); continue; }
+        const matches = cricinfoExtractMatches(response?.data);
+        recordDebugEvent('provider-fetch-meta', { provider: 'espncricinfo', date: step.providerDate, results: matches.length });
+        eventCount += matches.length;
+        for (const item of matches) {
+          const teams = Array.isArray(item?.teams) ? item.teams : [];
+          if (teams.length < 2) continue;
+          const home = teams[0] || {};
+          const away = teams[1] || {};
+          candidates.push(candidateWithStep('espncricinfo', step, item, {
+            providerEventId: cricinfoEventId(item),
+            startTime: item.startDate || item.startTime || item.date || '',
+            homeName: cricinfoTeamName(home),
+            awayName: cricinfoTeamName(away),
+            homeShortName: cricinfoTeamShortName(home),
+            awayShortName: cricinfoTeamShortName(away),
+            homeCode: cricinfoTeamShortName(home),
+            awayCode: cricinfoTeamShortName(away),
+            status: cricinfoStatus(item),
+            competitionName: item.series?.longName || item.series?.name || item.competition?.name || ''
+          }));
+        }
+      }
+      return {
+        eventCount,
+        candidates,
+        ...(errors.length ? { errors } : {}),
+        ...(!eventCount ? { parseFailures: ['ESPNcricinfo: no matches in response'] } : {})
+      };
+    });
+
+    return scoreFromResolution(result, 'espncricinfo', 'ESPNcricinfo', (candidate, pair) => {
+      const teams = Array.isArray(candidate.raw?.teams) ? candidate.raw.teams : [];
+      const homeScore = cricinfoTeamScore(teams[0] || {});
+      const awayScore = cricinfoTeamScore(teams[1] || {});
+      return {
+        team1Score: pair.team1IsHome ? homeScore : awayScore,
+        team2Score: pair.team1IsHome ? awayScore : homeScore,
+        detail: cricinfoStatus(candidate.raw),
+        venue: candidate.raw?.ground?.name || candidate.raw?.venue?.name || candidate.raw?.ground || '',
+        sourceUrl: cricinfoSourceUrl(candidate.raw)
+      };
+    });
+  }
+
   async function _findSofascore(match) {
     const sportKey = match.sportAlias || match.sportKey || '';
     const slug     = SOFASCORE_SPORT_SLUGS[sportKey];
@@ -2293,7 +2969,7 @@
       const ev = candidate.raw;
       const homeScore = ev.homeScore?.current ?? ev.homeScore?.display ?? '';
       const awayScore = ev.awayScore?.current ?? ev.awayScore?.display ?? '';
-      const statusDesc = ev.status?.description || ev.status?.type || '';
+      const statusDesc = sofascoreStatusDetail(ev.status);
       return {
         team1Score: pair.team1IsHome ? homeScore : awayScore,
         team2Score: pair.team1IsHome ? awayScore : homeScore,
@@ -2430,16 +3106,116 @@
       if (!raw) return { errors: ['BBC empty response'], candidates: [], eventCount: 0 };
 
       let data = raw;
+      let parseFailure = '';
+      const matchObjs = [];
+      const decodeHtml = value => String(value || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      const stripTags = value => decodeHtml(String(value || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+      const pushTextFixture = (text, href) => {
+        const fixtureText = stripTags(text);
+        const m = fixtureText.match(/\b(.+?)\s+versus\s+(.+?)\s+kick off\s+(\d{1,2}:\d{2})\b/i);
+        if (!m) return;
+        const homeName = m[1].trim();
+        const awayName = m[2].trim();
+        if (!homeName || !awayName) return;
+        const eventId = String(href || '').match(/\/live\/([^/?#]+)/)?.[1] || '';
+        matchObjs.push({
+          id: eventId,
+          startTime: `${step.providerDate}T${m[3].padStart(5, '0')}:00Z`,
+          status: { description: 'scheduled' },
+          homeTeam: { name: homeName, scores: { score: '' } },
+          awayTeam: { name: awayName, scores: { score: '' } },
+          sourceUrl: href || ''
+        });
+      };
+      const extractTextFixtures = html => {
+        const itemRe = /<(li|article|div|a)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+        let item;
+        while ((item = itemRe.exec(html))) {
+          if (!/\bversus\b/i.test(item[2]) || !/\bkick off\b/i.test(item[2])) continue;
+          const href = item[0].match(/\bhref=["']([^"']+)["']/i)?.[1] || '';
+          pushTextFixture(item[2], href);
+        }
+        if (!matchObjs.length) {
+          String(html).split(/\n|<\/(?:li|article|div|a)>/i).forEach(chunk => {
+            if (/\bversus\b/i.test(chunk) && /\bkick off\b/i.test(chunk)) pushTextFixture(chunk, '');
+          });
+        }
+      };
+      const extractDomFixtures = html => {
+        // Current BBC markup has no __NEXT_DATA__ blob: fixtures are <li data-tipo-topic-id>
+        // rows with team names in [class*="TeamNameWrapper"], the BBC event id on the
+        // a[data-tipo-id]/href, kickoff in <time>, and a visually-hidden
+        // "HOME versus AWAY kick off HH:MM" summary as a fallback. Scraped from the raw
+        // string (no server-side DOM parser) via attribute-anchored regex.
+        const liRe = /<li\b([^>]*\bdata-tipo-topic-id="[^"]*"[^>]*)>([\s\S]*?)<\/li>/gi;
+        let li;
+        while ((li = liRe.exec(html))) {
+          const liAttrs = li[1];
+          const inner = li[2];
+          const href = inner.match(/href="([^"]*\/live\/[^"]*)"/i)?.[1] || '';
+          const eventId =
+            inner.match(/\bdata-tipo-id="([^"]+)"/i)?.[1] ||
+            href.match(/\/live\/([^/?#"]+)/)?.[1] ||
+            liAttrs.match(/\bdata-tipo-topic-id="([^"]+)"/i)?.[1] || '';
+          const names = [];
+          const seen = new Set();
+          const wrapRe = /class="[^"]*TeamNameWrapper[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
+          let w;
+          while ((w = wrapRe.exec(inner))) {
+            const name = stripTags(w[1]);
+            const key = name.toLowerCase();
+            if (name && !seen.has(key)) { seen.add(key); names.push(name); }
+          }
+          const summary = stripTags(inner).match(/\b(.+?)\s+versus\s+(.+?)\s+kick off\s+(\d{1,2}:\d{2})\b/i);
+          let homeName = names[0] || (summary ? summary[1].trim() : '');
+          let awayName = names[1] || (summary ? summary[2].trim() : '');
+          if (!homeName || !awayName) continue;
+          let startTime = inner.match(/<time\b[^>]*\bdatetime="([^"]+)"/i)?.[1] || '';
+          if (!startTime) {
+            const timeText = stripTags(inner.match(/<time\b[^>]*>([\s\S]*?)<\/time>/i)?.[1] || '');
+            const hhmm = timeText.match(/\b(\d{1,2}:\d{2})\b/)?.[1] || (summary ? summary[3] : '');
+            if (hhmm) startTime = `${step.providerDate}T${hhmm.padStart(5, '0')}:00Z`;
+          }
+          const scoreNums = [];
+          const scoreRe = /class="[^"]*[Ss]core[^"]*"[^>]*>\s*(\d{1,3})\s*</g;
+          let s;
+          while ((s = scoreRe.exec(inner)) && scoreNums.length < 2) scoreNums.push(s[1]);
+          const lower = stripTags(inner).toLowerCase();
+          let statusText = 'scheduled';
+          if (scoreNums.length === 2) statusText = /\bfull time\b|\bft\b/.test(lower) ? 'finished' : 'live';
+          matchObjs.push({
+            id: eventId,
+            startTime,
+            status: { description: statusText },
+            homeTeam: { name: homeName, scores: { score: scoreNums[0] ?? '' } },
+            awayTeam: { name: awayName, scores: { score: scoreNums[1] ?? '' } },
+            sourceUrl: href ? (href.startsWith('http') ? href : `https://www.bbc.com${href}`) : ''
+          });
+        }
+      };
       if (typeof raw === 'string') {
         try {
-          const m = raw.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-          if (!m) return { parseFailures: ['BBC expected competition structure absent'], candidates: [], eventCount: 0 };
-          data = JSON.parse(m[1]);
+          extractDomFixtures(raw);
+          if (matchObjs.length) {
+            data = null;
+          } else {
+            const m = raw.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+            if (m) data = JSON.parse(m[1]);
+            else {
+              extractTextFixtures(raw);
+              data = null;
+            }
+          }
         } catch (_) {
-          return { parseFailures: ['BBC JSON parse failed'], candidates: [], eventCount: 0 };
+          parseFailure = 'BBC JSON parse failed';
         }
       }
-      const matchObjs = [];
       const walk = obj => {
         if (!obj || typeof obj !== 'object') return;
         if (Array.isArray(obj)) { obj.forEach(walk); return; }
@@ -2448,7 +3224,8 @@
         if (hn && an) matchObjs.push(obj);
         Object.values(obj).forEach(walk);
       };
-      walk(data);
+      if (data) walk(data);
+      if (!matchObjs.length) return { parseFailures: [parseFailure || 'BBC expected competition structure absent'], candidates: [], eventCount: 0 };
       return {
         eventCount: matchObjs.length,
         candidates: matchObjs.map(ev => candidateWithStep('bbcsport', step, ev, {
@@ -2471,7 +3248,239 @@
         team2Score: pair.team1IsHome ? awayScore : homeScore,
         detail: String(ev.status?.description || ev.progressDescription || ev.matchStatus || ''),
         venue: ev.venueName || '',
-        sourceUrl: buildBbcSourceUrl(sport, candidate)
+        sourceUrl: ev.sourceUrl || buildBbcSourceUrl(sport, candidate)
+      };
+    });
+  }
+
+  // -- API-Football (api-sports.io) soccer provider --------------------------------
+  // Endpoint: GET https://v3.football.api-sports.io/fixtures?date=YYYY-MM-DD
+  // Auth: x-apisports-key header (BYOK). One call returns all fixtures for the date
+  // across all leagues; the response is cached per date so each soccer match served
+  // from the same date costs 0 additional tokens. Free tier: 100 req/day, 10 req/min.
+
+  const TTL_APISPORTS = 5 * 60 * 1000;   // 5-min board cache (quota-aware, shorter TTL added in A·2)
+  const TTL_APISPORTS_MANUAL = 24 * 60 * 60 * 1000; // manual-only mode: board effectively never expires between manual refreshes
+
+  function apiSportsAuthHeaders() {
+    return { 'x-apisports-key': getApiSportsKey() };
+  }
+
+  // Shared board fetch for both api-sports providers (rugby/AFL + soccer). On the
+  // free tier (apiSportsRefreshMode === 'manual') the network is skipped during
+  // auto/interval refreshes — the last cached board keeps rendering at 0 tokens —
+  // and is only refetched when the user clicks "Refresh now" (context.manualRefresh).
+  // The manual refresh clears the api-sports date keys once up-front (in
+  // refreshPanel), so normal fetchWithCache dedup guarantees exactly one request
+  // per sport/date. Returns the gmFetchJsonWithMeta response, or null when the
+  // manual gate served nothing this cycle (caller treats as "no board").
+  function fetchApiSportsBoard({ cacheKey, url, label, provider }, context = {}) {
+    const manualOnly = uiSettings.apiSportsRefreshMode === 'manual';
+    if (manualOnly && context?.manualRefresh !== true) {
+      const cached = peekProviderCache(cacheKey);
+      if (cached) return Promise.resolve(cached);
+      recordDebugEvent('provider-fetch-meta', { provider, cacheKey, servedFromCache: 'manual-skip' });
+      return Promise.resolve(null);
+    }
+    return fetchWithCache(
+      cacheKey,
+      () => gmFetchJsonWithMeta(url, apiSportsAuthHeaders(), label),
+      manualOnly ? TTL_APISPORTS_MANUAL : TTL_APISPORTS,
+      TTL_ERROR
+    );
+  }
+
+  const APISPORTS_ENDPOINTS = {
+    rugby: {
+      label: 'API-Sports Rugby',
+      url: 'https://v1.rugby.api-sports.io/games',
+      cachePrefix: 'apisports:rugby:games'
+    },
+    'rugby-league': {
+      label: 'API-Sports Rugby',
+      url: 'https://v1.rugby.api-sports.io/games',
+      cachePrefix: 'apisports:rugby:games'
+    },
+    'australian-football': {
+      label: 'API-Sports AFL',
+      url: 'https://v1.afl.api-sports.io/games',
+      cachePrefix: 'apisports:afl:games'
+    }
+  };
+
+  function apiSportsTeamName(team) {
+    if (typeof team === 'string') return team;
+    return team?.name || team?.displayName || team?.shortName || '';
+  }
+
+  async function _findApiSports(match, context = {}) {
+    const config = APISPORTS_ENDPOINTS[match.sportKey];
+    if (!config) {
+      return { found: false, detail: 'API-Sports: sport not mapped', unmatched: true };
+    }
+    if (!hasApiSportsKey()) {
+      return { found: false, detail: 'API-Sports: key not configured', unmatched: true };
+    }
+
+    const live = isActuallyLive(match);
+    const plan = buildDateBucketPlan(match, 'iso', {
+      maxRequests: live ? 3 : 2
+    });
+
+    const result = await resolveProviderMatch(match, 'apisports', plan, async step => {
+      const dateStr = step.providerDate; // YYYY-MM-DD
+      const url = `${config.url}?date=${encodeURIComponent(dateStr)}`;
+      const response = await fetchApiSportsBoard({
+        cacheKey: `${config.cachePrefix}:${dateStr}`,
+        url,
+        label: `${config.label} games request`,
+        provider: 'apisports'
+      }, context);
+      if (!response) return { parseFailures: ['API-Sports: manual mode (cache-only)'], candidates: [], eventCount: 0 };
+      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0 };
+
+      const dayRemaining = response?.headers?.['x-ratelimit-requests-remaining'];
+      const minRemaining = response?.headers?.['x-ratelimit-remaining'];
+      if (dayRemaining != null || minRemaining != null) {
+        latestApiSportsQuota[config.label] = {
+          dayRemaining: dayRemaining != null ? String(dayRemaining) : null,
+          minRemaining: minRemaining != null ? String(minRemaining) : null,
+          updatedAt: Date.now()
+        };
+      }
+
+      const body = response?.data;
+      const apiErrors = body?.errors;
+      if (apiErrors && !Array.isArray(apiErrors) && Object.keys(apiErrors).length > 0) {
+        const errMsg = Object.values(apiErrors).join('; ');
+        recordDebugEvent('provider-fetch-meta', { provider: 'apisports', sportKey: match.sportKey, date: dateStr, errors: sanitizeDebugText(errMsg) });
+        return { errors: [errMsg], candidates: [], eventCount: 0 };
+      }
+
+      const games = Array.isArray(body?.response) ? body.response : [];
+      recordDebugEvent('provider-fetch-meta', {
+        provider: 'apisports',
+        sportKey: match.sportKey,
+        date: dateStr,
+        results: body?.results ?? games.length
+      });
+
+      if (!games.length) return { parseFailures: ['API-Sports: no games in response'], candidates: [], eventCount: 0 };
+
+      return {
+        eventCount: games.length,
+        candidates: games.map(item => {
+          const teams = item.teams || {};
+          const scores = item.scores || {};
+          const status = item.status || {};
+          const league = item.league || item.competition || {};
+          return candidateWithStep('apisports', step, item, {
+            providerEventId: item.game?.id || item.id || '',
+            startMs: item.timestamp ? Number(item.timestamp) * 1000 : 0,
+            homeName: apiSportsTeamName(teams.home),
+            awayName: apiSportsTeamName(teams.away),
+            status: status.short || status.long || '',
+            competitionName: league.name || league.displayName || ''
+          });
+        }).filter(c => c.homeName && c.awayName)
+      };
+    });
+
+    return scoreFromResolution(result, 'apisports', 'API-Sports', (candidate, pair) => {
+      const item = candidate.raw;
+      const scores = item.scores || {};
+      const status = item.status || {};
+      const league = item.league || item.competition || {};
+      return {
+        team1Score: pair.team1IsHome ? (scores.home ?? '') : (scores.away ?? ''),
+        team2Score: pair.team1IsHome ? (scores.away ?? '') : (scores.home ?? ''),
+        detail: status.long || status.short || '',
+        venue: item.venue?.name || item.venue?.city || league.name || ''
+      };
+    });
+  }
+
+  async function _findApiFootball(match, context = {}) {
+    if (!hasApiSportsKey()) {
+      return { found: false, detail: 'API-Football: key not configured', unmatched: true };
+    }
+
+    const live = isActuallyLive(match);
+    const plan = buildDateBucketPlan(match, 'iso', {
+      maxRequests: live ? 3 : 2
+    });
+
+    const result = await resolveProviderMatch(match, 'apifootball', plan, async step => {
+      const dateStr = step.providerDate; // YYYY-MM-DD
+      const url = `https://v3.football.api-sports.io/fixtures?date=${encodeURIComponent(dateStr)}`;
+      const response = await fetchApiSportsBoard({
+        cacheKey: `apifootball:fixtures:${dateStr}`,
+        url,
+        label: 'API-Football fixtures request',
+        provider: 'apifootball'
+      }, context);
+      if (!response) return { parseFailures: ['API-Football: manual mode (cache-only)'], candidates: [], eventCount: 0 };
+      if (response?.error) return { errors: [response.error], candidates: [], eventCount: 0 };
+
+      // Capture quota headers for display (daily remaining and per-minute remaining).
+      const dayRemaining = response?.headers?.['x-ratelimit-requests-remaining'];
+      const minRemaining = response?.headers?.['x-ratelimit-remaining'];
+      if (dayRemaining != null || minRemaining != null) {
+        latestApiSportsQuota['Football'] = {
+          dayRemaining: dayRemaining != null ? String(dayRemaining) : null,
+          minRemaining: minRemaining != null ? String(minRemaining) : null,
+          updatedAt: Date.now()
+        };
+      }
+
+      const body = response?.data;
+      const apiErrors = body?.errors;
+      if (apiErrors && !Array.isArray(apiErrors) && Object.keys(apiErrors).length > 0) {
+        const errMsg = Object.values(apiErrors).join('; ');
+        recordDebugEvent('provider-fetch-meta', { provider: 'apifootball', date: dateStr, errors: sanitizeDebugText(errMsg) });
+        return { errors: [errMsg], candidates: [], eventCount: 0 };
+      }
+
+      const fixtures = Array.isArray(body?.response) ? body.response : [];
+      recordDebugEvent('provider-fetch-meta', {
+        provider: 'apifootball',
+        date: dateStr,
+        results: body?.results ?? fixtures.length
+      });
+
+      if (!fixtures.length) return { parseFailures: ['API-Football: no fixtures in response'], candidates: [], eventCount: 0 };
+
+      return {
+        eventCount: fixtures.length,
+        candidates: fixtures.map(item => {
+          const fixture = item.fixture || {};
+          const teams = item.teams || {};
+          const goals = item.goals || {};
+          const league = item.league || {};
+          return candidateWithStep('apifootball', step, item, {
+            providerEventId: fixture.id || '',
+            startMs: fixture.timestamp ? fixture.timestamp * 1000 : 0,
+            homeName: teams.home?.name || '',
+            awayName: teams.away?.name || '',
+            status: fixture.status?.short || fixture.status?.long || '',
+            competitionName: league.name || ''
+          });
+        }).filter(c => c.homeName && c.awayName)
+      };
+    });
+
+    return scoreFromResolution(result, 'apifootball', 'API-Football', (candidate, pair) => {
+      const item = candidate.raw;
+      const goals = item.goals || {};
+      const fixture = item.fixture || {};
+      const league = item.league || {};
+      const statusShort = fixture.status?.short || '';
+      const statusLong = fixture.status?.long || '';
+      return {
+        team1Score: pair.team1IsHome ? (goals.home ?? '') : (goals.away ?? ''),
+        team2Score: pair.team1IsHome ? (goals.away ?? '') : (goals.home ?? ''),
+        detail: statusLong || statusShort,
+        venue: fixture.venue?.name || fixture.venue?.city || league.name || ''
       };
     });
   }
@@ -2666,7 +3675,7 @@
     if (!eventId) return normalizeHeadToHead('sofascore', 'SofaScore', []);
     const data = await fetchWithCache(
       `sofascore:h2h:${eventId}`,
-      () => gmFetchJson(`https://api.sofascore.com/api/v1/event/${encodeURIComponent(eventId)}/h2h/events`, sofascoreHeaders()),
+      () => gmFetchJson(`https://www.sofascore.com/api/v1/event/${encodeURIComponent(eventId)}/h2h/events`, sofascoreHeaders()),
       TTL_H2H,
       TTL_ERROR
     );
@@ -3218,7 +4227,8 @@
       const initials = words.map(w => w[0]).join('').toUpperCase();
       if (initials.length >= 2 && initials.length <= 4) return initials;
     }
-    return clean.slice(0, 3).toUpperCase();
+    const remainder = words.join(' ').trim() || clean;
+    return remainder.slice(0, 3).toUpperCase();
   }
 
   function formatSpreadPoint(point) {
@@ -3462,7 +4472,7 @@
 
   // -- Staged per-match fallback -------------------------------------------------
 
-  async function findScoreForMatch(match) {
+  async function findScoreForMatch(match, context = {}) {
     const providers = getProviderPriority(match);
     const tried  = [];
     const errors = [];
@@ -3471,12 +4481,15 @@
       tried.push(providerKey);
       try {
         let result = null;
-        if      (providerKey === 'espn')      result = await _findEspn(match);
-        else if (providerKey === 'sofascore') result = await _findSofascore(match);
-        else if (providerKey === 'livescore') result = await _findLivescore(match);
-        else if (providerKey === 'thescore')  result = await _findThescore(match);
-        else if (providerKey === 'bbcsport')  result = await _findBbc(match);
-        else if (providerKey === 'pandascore') result = await _findPandaScore(match);
+        if      (providerKey === 'espn')        result = await _findEspn(match);
+        else if (providerKey === 'espncricinfo') result = await _findEspnCricinfo(match);
+        else if (providerKey === 'apifootball') result = await _findApiFootball(match, context);
+        else if (providerKey === 'apisports')   result = await _findApiSports(match, context);
+        else if (providerKey === 'sofascore')   result = await _findSofascore(match);
+        else if (providerKey === 'livescore')   result = await _findLivescore(match);
+        else if (providerKey === 'thescore')    result = await _findThescore(match);
+        else if (providerKey === 'bbcsport')    result = await _findBbc(match);
+        else if (providerKey === 'pandascore')  result = await _findPandaScore(match);
 
         if (result?.found) {
           recordDebugEvent('score-found', {
@@ -4649,6 +5662,9 @@
 
   function makeFallbackMatchFromGame(game) {
     const [team1, team2] = parseGameTeams(game.matchName);
+    const startTime = clean(game.startTime || '');
+    const startTimestamp = game.startTimestamp || parseSelectedGameStartTimestamp(startTime);
+    const fallbackIsLive = isActuallyLive({ status: startTime, rawStatus: startTime });
     const match = {
       tornId: '',
       sport: game.sport || '',
@@ -4659,11 +5675,12 @@
       stage: game.competition || '',
       competition: game.competition || '',
       name: game.matchName || 'Selected match',
-      rawStatus: '',
-      status: game.startTime ? `Starts ${game.startTime}` : '',
-      sectionType: 'upcoming',
-      startTime: game.startTime || '',
-      startTimestamp: game.startTimestamp || parseSelectedGameStartTimestamp(game.startTime),
+      rawStatus: startTime,
+      status: startTime ? (fallbackIsLive ? startTime : `Starts ${startTime}`) : '',
+      sectionType: fallbackIsLive ? 'live' : 'upcoming',
+      isLive: fallbackIsLive,
+      startTime,
+      startTimestamp,
       team1,
       team2,
       amount: 0,
@@ -5246,6 +6263,37 @@
                   <label class="tm-bookie-check"><input type="checkbox" data-setting-key="showBettingCommentary" ${uiSettings.showBettingCommentary !== false ? 'checked' : ''}> Commentary</label>
                   <label class="tm-bookie-check"><input type="checkbox" data-setting-key="showSourceList"        ${uiSettings.showSourceList        !== false ? 'checked' : ''}> Source list</label>
                 </div>
+              </div>
+
+              <div class="tm-bookie-settings-odds-block">
+                <div class="tm-bookie-settings-label">API-Sports Scores (soccer / rugby / AFL)</div>
+                <div class="tm-bookie-settings-note">Optional BYOK provider for soccer, rugby, and AFL (fallback after ESPN). Free tier: 100 requests/day. Keys are private; do not enable on shared browsers. Each refetch uses 1 of your 100 daily free requests.</div>
+                ${uiSettings.enabledProviders?.apisports === true ? `
+                  <div class="tm-bookie-odds-key-row">
+                    ${hasApiSportsKey() ? `
+                      <span class="tm-bookie-odds-key-masked">${escapeHtml(maskApiSportsKey(getApiSportsKey()))}</span>
+                      <button class="tm-bookie-apisports-remove-btn" type="button">Remove Key</button>
+                    ` : `
+                      <input type="password" class="tm-bookie-apisports-key-input" placeholder="Paste API-Sports key..." autocomplete="off">
+                      <button class="tm-bookie-apisports-save-btn" type="button">Save Key</button>
+                    `}
+                  </div>
+                  ${hasApiSportsKey() && Object.keys(latestApiSportsQuota).length > 0 ? `
+                    <div class="tm-bookie-odds-quota">
+                      ${Object.entries(latestApiSportsQuota).map(([key, quota]) => `<div>${escapeHtml(key)}: day ${escapeHtml(String(quota.dayRemaining ?? '—'))} / min ${escapeHtml(String(quota.minRemaining ?? '—'))}</div>`).join('')}
+                    </div>
+                  ` : ''}
+                  <div class="tm-bookie-apisports-mode-row">
+                    <span class="tm-bookie-apisports-mode-label">Refresh</span>
+                    <span class="tm-bookie-apisports-mode-pill" aria-label="API-Sports refresh mode">
+                      <button class="tm-bookie-apisports-mode${uiSettings.apiSportsRefreshMode === 'auto' ? ' is-active' : ''}" data-apisports-mode="auto" type="button">Auto</button>
+                      <button class="tm-bookie-apisports-mode${uiSettings.apiSportsRefreshMode !== 'auto' ? ' is-active' : ''}" data-apisports-mode="manual" type="button">Manual-only</button>
+                    </span>
+                  </div>
+                  <div class="tm-bookie-settings-note">Manual-only: api-sports refetches only when you click Refresh now (1 request per sport, per the free 100/day cap).</div>
+                ` : `
+                  <div class="tm-bookie-settings-note">Enable API-Sports under Score Sources to configure a key.</div>
+                `}
               </div>
 
               <div class="tm-bookie-settings-odds-block">
@@ -5884,6 +6932,53 @@
 }
 
 #${PANEL_ID} .tm-bookie-refresh-mode.is-active {
+  background: var(--tm-bg-3);
+  color: var(--tm-text);
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode-label {
+  font-size: 11px;
+  color: var(--tm-muted);
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--tm-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--tm-bg-2);
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode {
+  border: 0;
+  border-right: 1px solid var(--tm-border);
+  background: var(--tm-bg-2);
+  color: var(--tm-muted);
+  cursor: pointer;
+  padding: 2px 9px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode:last-child {
+  border-right: 0;
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode:hover {
+  background: var(--tm-hover);
+  color: var(--tm-text);
+}
+
+#${PANEL_ID} .tm-bookie-apisports-mode.is-active {
   background: var(--tm-bg-3);
   color: var(--tm-text);
 }
@@ -6861,7 +7956,7 @@
 
       panel
         .querySelector('.tm-bookie-refresh')
-        .addEventListener('click', () => refreshPanel());
+        .addEventListener('click', () => refreshPanel({ manual: true }));
 
       panel
         .querySelector('.tm-bookie-panel-toggle')
@@ -7036,6 +8131,36 @@
       });
     }
 
+    const saveApiSportsBtn = panel.querySelector('.tm-bookie-apisports-save-btn');
+    if (saveApiSportsBtn && saveApiSportsBtn.dataset.bound !== '1') {
+      saveApiSportsBtn.dataset.bound = '1';
+      saveApiSportsBtn.addEventListener('click', () => {
+        const input = panel.querySelector('.tm-bookie-apisports-key-input');
+        const raw = (input?.value || '').trim();
+        if (!raw) return;
+        setApiSportsKey(raw);
+        input.value = '';
+        rerenderPanel();
+      });
+    }
+
+    const removeApiSportsBtn = panel.querySelector('.tm-bookie-apisports-remove-btn');
+    if (removeApiSportsBtn && removeApiSportsBtn.dataset.bound !== '1') {
+      removeApiSportsBtn.dataset.bound = '1';
+      removeApiSportsBtn.addEventListener('click', () => {
+        removeApiSportsKey();
+        rerenderPanel();
+      });
+    }
+
+    panel.querySelectorAll('.tm-bookie-apisports-mode').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => {
+        updateUiSetting('apiSportsRefreshMode', button.dataset.apisportsMode);
+      });
+    });
+
     const resetButton = panel.querySelector('.tm-bookie-reset-btn');
     if (resetButton && resetButton.dataset.bound !== '1') {
       resetButton.dataset.bound = '1';
@@ -7071,7 +8196,17 @@
 
   // -- refreshPanel --------------------------------------------------------------
 
-  async function refreshPanel() {
+  async function refreshPanel({ manual = false } = {}) {
+    const refreshContext = { manualRefresh: manual === true };
+    // A manual refresh clears the api-sports date keys once up-front so the next
+    // fetch per sport/date hits the network exactly once (later same-date matches
+    // then dedup on the freshly-cached board). Auto/interval refreshes leave the
+    // cache intact and are served cache-only while in manual mode.
+    if (manual) {
+      for (const key of Array.from(providerCache.keys())) {
+        if (key.startsWith('apisports:') || key.startsWith('apifootball:')) providerCache.delete(key);
+      }
+    }
     try {
       getOrCreatePanel();
 
@@ -7082,7 +8217,7 @@
 
       // Staged fallback: fetch providers lazily per match in parallel across matches
       const enrichedLiveBets = await Promise.all(
-        liveBets.map(async match => ({ ...match, score: await findScoreForMatch(match) }))
+        liveBets.map(async match => ({ ...match, score: await findScoreForMatch(match, refreshContext) }))
       );
 
       const visibleLiveBets = uiSettings.hideUnmatchedGames

@@ -46,7 +46,7 @@ test('extractUpcomingBets: only notstarted, sorted by start time', () => {
   const up = a.extractUpcomingBets(bookieData());
   assert.equal(up.length, 1);
   assert.equal(up[0].name, 'Alcaraz vs Djokovic');
-  assert.equal(up[0].sourceKey, 'sofascore'); // tennis -> sofascore
+  assert.equal(up[0].sourceKey, 'espn'); // tennis -> espn (dedicated tennis parser)
 });
 
 test('normalizeBetMatch: maps fields, sums bet amounts, derives source/sport', () => {

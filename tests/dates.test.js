@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadUserscript } = require('./load-userscript');
+const { NOW, liveMatch } = require('./fixtures');
 
 const a = loadUserscript();
 const SEC = ms => Math.floor(ms / 1000);
@@ -110,6 +111,28 @@ test('parseSelectedGameStartTimestamp: date time form with am/pm', () => {
   assert.equal(new Date(ms).toISOString(), '2026-06-20T19:30:00.000Z');
   const am = a.parseSelectedGameStartTimestamp('20/06/2026 12:15 am');
   assert.equal(new Date(am).toISOString(), '2026-06-20T00:15:00.000Z');
+});
+
+test('parseSelectedGameStartTimestamp: live status text is not a scheduled timestamp', () => {
+  assert.equal(a.parseSelectedGameStartTimestamp('Match is in progress'), '');
+});
+
+test('live selected game with no timestamp uses current-live recovery date', () => {
+  a.__control.setNow(NOW);
+  const match = liveMatch({
+    status: 'Match is in progress',
+    rawStatus: '',
+    sectionType: '',
+    isLive: false,
+    startTimestamp: ''
+  });
+  const plan = a.buildSofascoreLookupPlan(match);
+  assert.equal(a.getMatchAnchorMs(match), null);
+  assert.equal(a.getLiveRecoveryMs(match), NOW);
+  assert.equal(plan[0].anchorKind, 'current-live');
+  assert.equal(plan[0].reason, 'live-recovery');
+  assert.equal(plan[0].providerDate, '2026-06-20');
+  assert.match(plan[0].diagnostic || '', /current live recovery/);
 });
 
 test('inferSelectedDateParts: disambiguates by >12 rule, else day-first', () => {

@@ -5,15 +5,15 @@ A Tampermonkey userscript that adds a configurable live scores panel to Torn Boo
 ## Features
 
 - Live and upcoming bet panel for Torn Bookie
-- Score lookups from ESPN, SofaScore, LiveScore, TheScore, BBC Sport, and NHL public APIs
-- Optional BYOK integrations for The Odds API and PandaScore
+- Score lookups from ESPN, ESPNcricinfo, SofaScore, LiveScore, TheScore, BBC Sport, API-Sports/API-Football, PandaScore, and NHL public APIs
+- Optional BYOK integrations for The Odds API, API-Sports, and PandaScore
 - Details pane with team snapshots, odds analysis, expected outcome, and commentary
 - Provider toggles, themes, copy tools, debug report, and local caching
 
 ## Install
 
 1. Install Tampermonkey or a compatible userscript manager.
-2. Open `Live_Scores_Panel.js`.
+2. Open `Torn_Bookie_Live_Scores.js`.
 3. Copy the script into a new userscript, or install it from a hosted raw script URL.
 4. Visit Torn Bookie at:
 
@@ -34,9 +34,17 @@ The script can work without API keys.
 Optional integrations:
 
 - The Odds API: enables Odds Analysis
+- API-Sports: enables quota-aware soccer, rugby, and AFL fallback coverage
 - PandaScore: enables supported esports score lookups
 
 Keys are stored locally by your userscript manager and are not included in debug reports.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Provider notes](docs/PROVIDER_NOTES.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Roadmap](docs/ROADMAP.md)
 
 ## Disclaimer
 

@@ -27,26 +27,29 @@ test('required metadata directives are present', () => {
   assert.equal(metaValues('run-at')[0], 'document-start'); // needed to intercept early
 });
 
-test('@match is tightly scoped to the Torn bookie page (no broad host access)', () => {
+test('@match is tightly scoped to Torn bookie plus SofaScore token refresh (no broad host access)', () => {
   const matches = metaValues('match');
-  assert.equal(matches.length, 1);
-  assert.equal(matches[0], 'https://www.torn.com/page.php?sid=bookie*');
+  assert.deepEqual([...matches].sort(), [
+    'https://www.sofascore.com/*',
+    'https://www.torn.com/page.php?sid=bookie*'
+  ].sort());
   assert.ok(!metaBlock.includes('<all_urls>'));
   assert.ok(!/@include/.test(metaBlock));
 });
 
 test('grants are limited to what the script uses', () => {
   const grants = metaValues('grant');
-  const expected = ['GM_xmlhttpRequest', 'GM_setClipboard', 'GM_getValue', 'GM_setValue', 'GM_deleteValue', 'unsafeWindow'];
+  const expected = ['GM_xmlhttpRequest', 'GM_setClipboard', 'GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_openInTab', 'unsafeWindow'];
   assert.deepEqual([...grants].sort(), [...expected].sort());
 });
 
 test('@connect lists exactly the expected external hosts (no wildcards)', () => {
   const connects = metaValues('connect');
   const expected = [
-    'site.api.espn.com', 'api.sofascore.com', 'prod-public-api.livescore.com',
+    'site.api.espn.com', 'api.sofascore.com', 'www.sofascore.com', 'prod-public-api.livescore.com',
     'api.thescore.com', 'www.bbc.com', 'api-web.nhle.com', 'api.nhle.com',
-    'api.the-odds-api.com', 'api.pandascore.co'
+    'api.the-odds-api.com', 'api.pandascore.co', 'v3.football.api-sports.io',
+    'v1.rugby.api-sports.io', 'v1.afl.api-sports.io', 'hs-consumer-api.espncricinfo.com'
   ];
   assert.deepEqual([...connects].sort(), [...expected].sort());
   // no wildcard / overly-broad connect
@@ -58,14 +61,18 @@ test('every API host the code fetches from is covered by @connect', () => {
   // Hosts that appear in fetch endpoint constants / request builders in the body.
   const fetchedHosts = [
     'site.api.espn.com',          // ESPN_ENDPOINTS
-    'api.sofascore.com',          // sofascore api
+    'www.sofascore.com',          // sofascore api
     'prod-public-api.livescore.com',
     'api.thescore.com',
     'www.bbc.com',
     'api-web.nhle.com',
     'api.nhle.com',
     'api.the-odds-api.com',
-    'api.pandascore.co'
+    'api.pandascore.co',
+    'v3.football.api-sports.io',  // API-Football BYOK soccer provider
+    'v1.rugby.api-sports.io',     // API-Sports Rugby BYOK provider
+    'v1.afl.api-sports.io',       // API-Sports AFL BYOK provider
+    'hs-consumer-api.espncricinfo.com' // ESPNcricinfo cricket provider
   ];
   for (const host of fetchedHosts) {
     assert.ok(connects.has(host), `missing @connect for fetched host ${host}`);
@@ -78,18 +85,32 @@ test('interception is restricted to the Torn bookie API marker only', () => {
   assert.ok(SRC.includes("includes('sid=bookieApi')"));
 });
 
-// ---- Documented defect (Low): version constant out of sync with @version ----
-test('DEFECT: SCRIPT_VERSION constant disagrees with @version header', () => {
+// ---- Metadata sync: SCRIPT_VERSION fallback and GM_info override ----
+test('SCRIPT_VERSION defaults to @version when GM_info is absent', () => {
+  const { loadUserscript } = require('./load-userscript.js');
+  const api = loadUserscript();
   const headerVersion = metaValues('version')[0];
-  const constMatch = SRC.match(/const SCRIPT_VERSION\s*=\s*'([^']+)'/);
-  assert.ok(constMatch);
-  assert.equal(headerVersion, '2.5.3');
-  assert.equal(constMatch[1], '2.1.0');
-  assert.notEqual(headerVersion, constMatch[1]); // debug reports show the wrong version
+  assert.equal(headerVersion, '2.5.7');
+  assert.equal(api.SCRIPT_VERSION, '2.5.7');
 });
 
-// ---- Documented defect (Low): malformed @homepage URL ----
-test('DEFECT: @homepage has a "hhttps" typo (invalid URL)', () => {
+test('SCRIPT_VERSION is overridden by injected GM_info.script.version', () => {
+  const { loadUserscript } = require('./load-userscript.js');
+  const injectedVersion = '2.5.7';
+  const api = loadUserscript({
+    gmInfo: {
+      script: {
+        version: injectedVersion
+      }
+    }
+  });
+  assert.equal(api.SCRIPT_VERSION, injectedVersion);
+});
+
+// ---- Metadata validation: @homepage URL is correct ----
+test('@homepage is a valid https URL (no hhttps typo)', () => {
   const homepage = metaValues('homepage')[0];
-  assert.ok(homepage.startsWith('hhttps://'), homepage); // should be https://
+  assert.ok(homepage.startsWith('https://'), `homepage should start with https://, got: ${homepage}`);
+  assert.ok(!homepage.startsWith('hhttps://'), 'homepage contains typo hhttps://');
+  assert.equal(homepage, 'https://greasyfork.org/en/scripts/583676-torn-bookie-live-scores');
 });

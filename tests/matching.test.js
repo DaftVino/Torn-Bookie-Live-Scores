@@ -20,7 +20,7 @@ test('calcTeamMatchScore: exact, alias, containment, jaccard', () => {
   assert.equal(a.calcTeamMatchScore('Boston Red Sox', 'boston red sox'), 100);
   assert.equal(a.calcTeamMatchScore('Cloud9', 'C9'), 95);          // alias
   assert.equal(a.calcTeamMatchScore('Natus Vincere', 'NaVi'), 95); // alias
-  assert.equal(a.calcTeamMatchScore('Tottenham Hotspur', 'Tottenham'), 80); // containment (no alias)
+  assert.equal(a.calcTeamMatchScore('FC Barcelona', 'Barcelona'), 80); // safe token containment (only extra token is neutral affix "fc")
   assert.equal(a.calcTeamMatchScore('', 'x'), 0);
 });
 
@@ -30,19 +30,87 @@ test('calcTeamMatchScore: min-length guard catches short containment (York/New Y
   assert.ok(a.calcTeamMatchScore('York', 'New York') < 60);
 });
 
-// ---- Documented defect (Medium): containment guard does not do what its comment claims ----
-// Source comment (line ~1270): "Containment ... prevents 'mexico' matching 'new mexico'".
-// In reality the guard only requires BOTH normalized names to be >= 5 chars; a 6-char
-// name fully contained in a longer one still scores 80 (>= CONFIDENCE_THRESHOLD 60).
-// This produces false-positive matches for reserve/youth/"New X" opponents that play on
-// the same day (e.g. "Arsenal" vs "Arsenal Reserves"). Pin the actual behavior.
-test('DEFECT: containment heuristic over-matches contained names (>= threshold)', () => {
-  assert.equal(a.calcTeamMatchScore('Mexico', 'New Mexico'), 80);            // comment claims this is prevented
-  assert.equal(a.calcTeamMatchScore('Arsenal', 'Arsenal Reserves'), 80);
-  assert.equal(a.calcTeamMatchScore('United', 'Manchester United'), 80);
-  // And it flows through to a full (both-sides) accepted pair:
+// ---- Fixed (Medium): containment no longer over-matches contained names ----
+// Raw character containment used to grant 80 whenever a >=5-char normalized name was a
+// substring of a longer one, so "mexico" matched "new mexico", "arsenal" matched
+// "arsenal reserves", and "united" matched "manchester united". Conservative token-
+// sequence containment now only returns 80 when the shorter name's full token sequence
+// is contiguous in the longer name AND every leftover token is a neutral club affix
+// (fc/cf/sc/club). A disqualifying qualifier ("new", "reserves", ...), a non-neutral
+// extra token ("manchester"), or a generic single token ("united") falls through to the
+// Jaccard path, which scores these below CONFIDENCE_THRESHOLD.
+const CONFIDENCE_THRESHOLD = a.CONFIDENCE_THRESHOLD;
+test('FIXED: containment does not over-match contained names (< threshold)', () => {
+  // "new" is a disqualifying qualifier -> not a neutral affix -> falls through to Jaccard.
+  assert.ok(a.calcTeamMatchScore('Mexico', 'New Mexico') < CONFIDENCE_THRESHOLD);
+  // "reserves" is a disqualifying qualifier.
+  assert.ok(a.calcTeamMatchScore('Arsenal', 'Arsenal Reserves') < CONFIDENCE_THRESHOLD);
+  // "united" is an ambiguous generic single token AND "manchester" is a non-neutral extra.
+  assert.ok(a.calcTeamMatchScore('United', 'Manchester United') < CONFIDENCE_THRESHOLD);
+  // The full (both-sides) pair must no longer be accepted in either orientation.
   const m = { team1: 'Mexico', team2: 'USA' };
-  assert.equal(a.matchTeamPair(m, 'New Mexico', 'USA').confidence, 80);
+  assert.ok(a.matchTeamPair(m, 'New Mexico', 'USA').confidence < CONFIDENCE_THRESHOLD);
+  assert.ok(a.matchTeamPair(m, 'USA', 'New Mexico').confidence < CONFIDENCE_THRESHOLD);
+});
+
+// Disqualifying qualifiers (reserve/youth/gender/secondary-squad) must each block the
+// 80 containment score. These are the qualifiers called out by the fix plan. The phase
+// scope is the containment branch only, so the guarantee is "no 80" (< 80); Phase D
+// separately covers the 1-2 char qualifier Jaccard residual below.
+test('FIXED: disqualifying qualifiers block containment confidence', () => {
+  for (const q of ['New', 'Reserve', 'Reserves', 'Women', 'W', 'B', 'II', 'U19', 'U21', 'U23']) {
+    assert.ok(
+      a.calcTeamMatchScore('Chelsea', `Chelsea ${q}`) < 80,
+      `expected "Chelsea" / "Chelsea ${q}" to be denied the 80 containment score`
+    );
+  }
+  // Multi-character qualifiers also fall fully below threshold via Jaccard.
+  for (const q of ['New', 'Reserve', 'Reserves', 'Women', 'U19', 'U21', 'U23']) {
+    assert.ok(a.calcTeamMatchScore('Chelsea', `Chelsea ${q}`) < CONFIDENCE_THRESHOLD);
+  }
+});
+
+test('FIXED: short secondary-side qualifiers block Jaccard confidence', () => {
+  for (const q of ['B', 'II', 'W']) {
+    assert.ok(
+      a.calcTeamMatchScore('Central SC', `Central ${q}`) < CONFIDENCE_THRESHOLD,
+      `expected "Central SC" / "Central ${q}" to stay below confidence threshold`
+    );
+  }
+});
+
+test('FIXED: reserve and youth qualifiers block Jaccard confidence', () => {
+  for (const q of ['2', 'Reserve', 'Reserves', 'Women', 'U19', 'U21', 'U23', 'Youth']) {
+    assert.ok(
+      a.calcTeamMatchScore('Central SC', `Central ${q}`) < CONFIDENCE_THRESHOLD,
+      `expected "Central SC" / "Central ${q}" to stay below confidence threshold`
+    );
+  }
+});
+
+// Generic one-token names must not qualify by containment alone, even when the only
+// leftover token is an otherwise-neutral affix: "United"/"United FC" must NOT get the 80
+// containment score (it would have, pre-fix). The plan's threshold guarantee for generic
+// tokens is the "United"/"Manchester United" case covered above.
+test('FIXED: generic single-token names cannot qualify by containment alone', () => {
+  for (const g of ['United', 'City', 'Town', 'Athletic', 'Sporting', 'Racing', 'Real']) {
+    assert.ok(
+      a.calcTeamMatchScore(g, `${g} FC`) < 80,
+      `expected generic "${g}" / "${g} FC" to be denied the 80 containment score`
+    );
+  }
+});
+
+// Positive regression: legitimate contiguous token-sequence containment still scores 80.
+// Path for each: none of these names are in TEAM_ALIASES and none are exact, so the score
+// comes from the safe token-containment branch (the only extra token is a neutral affix).
+test('FIXED: legitimate neutral-affix containment still scores 80', () => {
+  assert.equal(a.calcTeamMatchScore('Barcelona', 'FC Barcelona'), 80);            // extra "fc"
+  assert.equal(a.calcTeamMatchScore('Real Madrid', 'Real Madrid CF'), 80);        // extra "cf"
+  assert.equal(a.calcTeamMatchScore('Manchester United', 'Manchester United FC'), 80); // extra "fc"
+  assert.equal(a.calcTeamMatchScore('Central SC', 'Central'), 80);                // extra "sc"
+  // Multi-token containment is direction-independent.
+  assert.equal(a.calcTeamMatchScore('Real Madrid CF', 'Real Madrid'), 80);
 });
 
 test('calcTeamMatchScore: distinct same-league teams stay below threshold', () => {

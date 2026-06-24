@@ -31,6 +31,8 @@ const SOURCE_PATH = path.join(__dirname, '..', 'Torn_Bookie_Live_Scores.js');
 // Names we want to pull out of the IIFE scope. Every name is a hoisted function
 // declaration or a const/let in scope at the end of the IIFE.
 const EXPORT_NAMES = [
+  // script metadata (Phase 1 testing)
+  'SCRIPT_VERSION',
   // string / format utils
   'clean', 'parseMult', 'normalizeName', 'slugify', 'escapeHtml', 'formatMoney',
   'formatStartTime', 'roundNumber',
@@ -64,6 +66,11 @@ const EXPORT_NAMES = [
   'detectEsportsGameKey', 'isExcludedSport', 'getSportLabel', 'getSportKey',
   'chooseScoreSource', 'getEspnKey', 'isProviderSupportedForSport',
   'getProviderPriority', 'isNhlMatch', 'getStatsProviderPriority',
+  'findScoreForMatch',
+  'resolveSofascoreMatch', '_findSofascore', '_findH2hSofascore',
+  'getSofascoreToken', 'setSofascoreToken', 'getSofascoreTokenTimestamp',
+  'captureSofascoreRequestedWith', 'installSofascoreTokenCapture',
+  'refreshSofascoreToken', 'sofascoreStatusDetail',
   // bet extraction
   'normalizeBetMatch', 'extractLiveBets', 'extractUpcomingBets',
   'groupMatchesBySport', 'getActiveSources', 'getInitialHeaderSources',
@@ -88,15 +95,26 @@ const EXPORT_NAMES = [
   'deepMergeSettings', 'isRenderOnlySetting',
   'sanitizeDebugText', 'sanitizeDebugValue', 'isSensitiveDebugKey', 'limitDebugString',
   'escapeRegExp',
+  'buildDebugReport', 'recordDebugEvent',
+  'getUrlHostPath', 'updateNetworkStats', 'captureResponseShape',
+  'networkStats', 'networkSamples',
   // caching primitives
-  'fetchWithCache',
+  'gmFetchJson', 'gmFetchJsonWithMeta', 'fetchWithCache',
+  '_findBbc',
   // shared mutable state / constants
   'providerCache', 'inFlightRequests', 'resolvedEventCache', 'enrichmentCache',
   'uiSettings', 'DEFAULT_UI_SETTINGS', 'CONFIDENCE_THRESHOLD',
   'DAY_MS', 'HOUR_MS', 'MINUTE_MS', 'TTL_SUCCESS', 'TTL_ERROR',
   'TEAM_ALIASES', 'PROVIDER_PRIORITY',
   'SOFASCORE_SPORT_SLUGS', 'LIVESCORE_SPORT_SLUGS', 'THESCORE_SPORT_SLUGS',
-  'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS'
+  'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS',
+  // ESPNcricinfo cricket provider
+  'ESPNCRICINFO_BASE', 'buildCricinfoPlan', '_findEspnCricinfo',
+  // API-Sports BYOK
+  'getApiSportsKey', 'setApiSportsKey', 'removeApiSportsKey', 'hasApiSportsKey', 'maskApiSportsKey',
+  'APISPORTS_ENDPOINTS', '_findApiSports',
+  // Tennis ESPN provider
+  '_findEspn', '_findEspnTennis'
 ];
 
 function buildInstrumentedSource() {
@@ -109,7 +127,7 @@ function buildInstrumentedSource() {
   return original.slice(0, idx) + injection + original.slice(idx);
 }
 
-function makeSandbox() {
+function makeSandbox(options = {}) {
   let currentNow = Date.UTC(2026, 5, 20, 12, 0, 0); // fixed default "now": 2026-06-20T12:00:00Z
 
   class MockDate extends Date {
@@ -122,14 +140,39 @@ function makeSandbox() {
 
   const gmStore = new Map();
   const lsStore = new Map();
+  const gmRequests = [];
+  const gmOpenedTabs = [];
+  const gmXmlhttpRequest = options.gmXmlhttpRequest;
 
   const noopTimer = () => 0;
+
+  function resolveGmRequestOutcome(request, index) {
+    return typeof gmXmlhttpRequest === 'function'
+      ? gmXmlhttpRequest(request, index)
+      : gmXmlhttpRequest;
+  }
+
+  function runGmRequestStub(request) {
+    gmRequests.push(request);
+    if (!gmXmlhttpRequest) return;
+    const outcome = resolveGmRequestOutcome(request, gmRequests.length - 1);
+    if (!outcome) return;
+    const type = typeof outcome === 'string' ? outcome : outcome.type;
+    if (type === 'load') {
+      request.onload?.(outcome.response || { status: 200, responseText: '{}', responseHeaders: '' });
+    } else if (type === 'error') {
+      request.onerror?.(outcome.error || new Error('stub network error'));
+    } else if (type === 'timeout') {
+      request.ontimeout?.();
+    }
+  }
 
   const xhrProto = { open() {}, send() {}, addEventListener() {}, setRequestHeader() {} };
   function XMLHttpRequestStub() {}
   XMLHttpRequestStub.prototype = xhrProto;
 
   const listeners = {};
+  const initialLocation = options.location || { origin: 'https://www.torn.com', hostname: 'www.torn.com', pathname: '/page.php', href: 'https://www.torn.com/page.php?sid=bookie', hash: '' };
   const windowStub = {
     fetch: async () => ({ clone: () => ({ text: async () => '' }), text: async () => '' }),
     XMLHttpRequest: XMLHttpRequestStub,
@@ -138,7 +181,8 @@ function makeSandbox() {
     innerWidth: 1920,
     innerHeight: 1080,
     devicePixelRatio: 1,
-    location: { origin: 'https://www.torn.com', pathname: '/page.php', href: 'https://www.torn.com/page.php?sid=bookie' }
+    location: initialLocation,
+    close: () => { windowStub.__closed = true; }
   };
 
   const documentStub = {
@@ -158,7 +202,7 @@ function makeSandbox() {
     Date: MockDate,
     Math, JSON, Object, Array, String, Number, Boolean, RegExp, Map, Set, Symbol,
     Promise, Error, TypeError, isNaN, isFinite, parseInt, parseFloat, encodeURIComponent,
-    decodeURIComponent, URL, Intl,
+    decodeURIComponent, URL, Headers, Intl,
     setTimeout: noopTimer, clearTimeout: () => {}, setInterval: noopTimer, clearInterval: () => {},
     window: windowStub,
     document: documentStub,
@@ -173,7 +217,8 @@ function makeSandbox() {
     GM_getValue: (k, d) => (gmStore.has(k) ? gmStore.get(k) : d),
     GM_setValue: (k, v) => gmStore.set(k, v),
     GM_deleteValue: k => gmStore.delete(k),
-    GM_xmlhttpRequest: () => {},
+    GM_openInTab: (url, opts) => gmOpenedTabs.push({ url, opts }),
+    GM_xmlhttpRequest: runGmRequestStub,
     GM_setClipboard: () => {},
     globalThis: null
   };
@@ -187,13 +232,20 @@ function makeSandbox() {
       getNow: () => currentNow,
       gmStore,
       lsStore,
+      gmRequests,
+      gmOpenedTabs,
+      window: windowStub,
       listeners
     }
   };
 }
 
-function loadUserscript() {
-  const { sandbox, control } = makeSandbox();
+function loadUserscript(options = {}) {
+  const { sandbox, control } = makeSandbox(options);
+  // Optional: inject GM_info for testing version override behavior
+  if (options.gmInfo) {
+    sandbox.GM_info = options.gmInfo;
+  }
   const context = vm.createContext(sandbox);
   const src = buildInstrumentedSource();
   vm.runInContext(src, context, { filename: 'Torn_Bookie_Live_Scores.instrumented.js' });
@@ -207,6 +259,8 @@ function loadUserscript() {
     api.inFlightRequests.clear();
     api.resolvedEventCache.clear();
     api.enrichmentCache.clear();
+    api.networkStats.clear();
+    api.networkSamples.clear();
   };
   api.__control = control;
   return api;

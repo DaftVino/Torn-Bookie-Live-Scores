@@ -150,11 +150,11 @@ test('buildBetCommentary fallback line when no best bet', () => {
 // When every word is a filler (FC/SC/CF/the/of/and/&), the function falls back to
 // the first three chars of the ORIGINAL string, re-introducing the filler and a
 // trailing space instead of abbreviating the meaningful word. Characterization
-// test pins the *actual* (buggy) output so the regression is tracked.
-test('DEFECT: abbreviateSelection leaks filler word + trailing space', () => {
-  assert.equal(a.abbreviateSelection('FC Barcelona'), 'FC '); // expected: 'BAR'
-  assert.equal(a.abbreviateSelection('The Rock'), 'THE');     // expected: 'ROC'
-  // Multi-word non-filler names work correctly:
+test('abbreviateSelection filters filler words and uses filtered remainder', () => {
+  assert.equal(a.abbreviateSelection('FC Barcelona'), 'BAR');
+  assert.equal(a.abbreviateSelection('The Rock'), 'ROC');
+  // Multi-word non-filler names use initials:
   assert.equal(a.abbreviateSelection('New York Yankees'), 'NYY');
+  // Single non-filler word uses first three letters:
   assert.equal(a.abbreviateSelection('Liverpool'), 'LIV');
 });

@@ -73,6 +73,21 @@ test('isActuallyLive: structural live section wins over a non-live status token'
   assert.equal(a.isActuallyLive({ status: 'postponed' }), false);
 });
 
+test('isActuallyLive: selected-game in-progress text is live without a timestamp', () => {
+  assert.equal(a.normalizeStatusToken('Match is in progress'), 'matchisinprogress');
+  assert.equal(a.normalizeStatusToken('Starts Match is in progress'), 'startsmatchisinprogress');
+  assert.equal(a.isActuallyLive({ status: 'Match is in progress' }), true);
+  assert.equal(a.isActuallyLive({ status: 'Starts Match is in progress' }), true);
+  assert.equal(a.isActuallyLive({ rawStatus: 'Match is in progress' }), true);
+});
+
+test('isActuallyLive: scheduled and finished text stays non-live', () => {
+  for (const s of ['scheduled', 'notstarted', 'finished', 'complete', 'completed', 'final']) {
+    assert.equal(a.isActuallyLive({ status: s }), false, `${s} should not be live`);
+  }
+  assert.equal(a.isActuallyLive({ status: 'Starts 19:30 - 20/06/2026' }), false);
+});
+
 test('BEHAVIOR: delayed/abandoned/suspended are neither live nor final nor non-live tokens', () => {
   // These do not appear in any status set; isActuallyLive on a bare object is false
   // (no live token) and isFinalStatus is false -> they render as "in limbo".

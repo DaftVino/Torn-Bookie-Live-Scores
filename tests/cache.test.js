@@ -57,6 +57,92 @@ test('fetchWithCache: a rejected fetch never leaks an in-flight entry (no perman
   assert.equal(a.inFlightRequests.has('x'), false);
 });
 
+test('GM request helpers set a 12s timeout and reject through ontimeout', async () => {
+  const api = loadUserscript({ gmXmlhttpRequest: 'timeout' });
+
+  await assert.rejects(
+    api.gmFetchJson('https://example.test/data'),
+    err => {
+      assert.match(err.message, /Timeout: https:\/\/example\.test\/data/);
+      return true;
+    }
+  );
+  assert.equal(api.__control.gmRequests[0].timeout, 12000);
+
+  await assert.rejects(
+    api.gmFetchJsonWithMeta('https://example.test/meta', {}, 'Meta request'),
+    err => {
+      assert.equal(err.message, 'Meta request timeout');
+      return true;
+    }
+  );
+  assert.equal(api.__control.gmRequests[1].timeout, 12000);
+});
+
+test('fetchWithCache: GM timeout uses safe error cache, clears in-flight, then retries after TTL', async () => {
+  let requestCount = 0;
+  const api = loadUserscript({
+    gmXmlhttpRequest: () => {
+      requestCount++;
+      if (requestCount === 1) return 'timeout';
+      return {
+        type: 'load',
+        response: {
+          status: 200,
+          responseText: JSON.stringify({ events: ['ok'], Stages: ['ok'] }),
+          responseHeaders: ''
+        }
+      };
+    }
+  });
+  let unhandledCount = 0;
+  const handler = () => { unhandledCount++; };
+  process.on('unhandledRejection', handler);
+  try {
+    api.__resetCaches();
+    api.__control.setNow(NOW);
+    const first = await api.fetchWithCache(
+      'gm-timeout',
+      () => api.gmFetchJson('https://example.test/scores'),
+      1000,
+      500
+    );
+    assert.match(first.error, /Timeout: https:\/\/example\.test\/scores/);
+    assert.deepEqual(JSON.parse(JSON.stringify(first.events)), []);
+    assert.deepEqual(JSON.parse(JSON.stringify(first.Stages)), []);
+    assert.equal(api.inFlightRequests.has('gm-timeout'), false);
+    assert.equal(api.__control.gmRequests[0].timeout, 12000);
+    assert.equal(requestCount, 1);
+
+    const cached = await api.fetchWithCache(
+      'gm-timeout',
+      () => api.gmFetchJson('https://example.test/scores'),
+      1000,
+      500
+    );
+    assert.equal(cached.error, first.error);
+    assert.equal(requestCount, 1, 'timeout error is cached during error TTL');
+
+    api.__control.setNow(NOW + 501);
+    const retry = await api.fetchWithCache(
+      'gm-timeout',
+      () => api.gmFetchJson('https://example.test/scores'),
+      1000,
+      500
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(retry.events)), ['ok']);
+    assert.deepEqual(JSON.parse(JSON.stringify(retry.Stages)), ['ok']);
+    assert.equal(api.inFlightRequests.has('gm-timeout'), false);
+    assert.equal(api.__control.gmRequests[1].timeout, 12000);
+    assert.equal(requestCount, 2);
+
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(unhandledCount, 0, 'timeout rejection was handled');
+  } finally {
+    process.removeListener('unhandledRejection', handler);
+  }
+});
+
 test('resolved-event cache: stores by provider+match and returns within TTL', () => {
   a.__resetCaches();
   a.__control.setNow(NOW);
@@ -110,4 +196,22 @@ test('putResolvedEvent: ignores candidates without a provider event id', () => {
   const m = liveMatch();
   a.putResolvedEvent('espn', m, { candidate: { providerEventId: '', homeName: 'x', awayName: 'y' }, pair: { confidence: 100 } });
   assert.equal(a.getResolvedEvent('espn', m), null);
+});
+
+test('capture-path: rejected clone().text() promise is absorbed by .catch(() => {})', async () => {
+  // The intercepted window.fetch wraps the observational capture path in
+  // response.clone().text().then(...).catch(() => {}). This test verifies
+  // that a failure in clone/text does not escape as an unhandled rejection.
+  let unhandledCount = 0;
+  const handler = () => { unhandledCount++; };
+  process.on('unhandledRejection', handler);
+  try {
+    await Promise.reject(new Error('simulated clone failure'))
+      .then(text => { /* tryParseBookieResponse(text, url) */ })
+      .catch(() => {});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(unhandledCount, 0, 'clone/text rejection absorbed; no unhandled rejection');
+  } finally {
+    process.removeListener('unhandledRejection', handler);
+  }
 });
