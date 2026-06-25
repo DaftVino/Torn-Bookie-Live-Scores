@@ -8192,15 +8192,13 @@
           </div>
           <div class="tm-bookie-powered">
             <span class="tm-bookie-powered-text">Powered by</span>
-            <span class="tm-bookie-source-list">
-              ${renderPoweredBySources(getInitialHeaderSources())}
-            </span>
+            <span class="tm-bookie-source-list"></span>
             <button class="tm-bookie-refresh" title="Refresh now" aria-label="Refresh scores now">↻</button>
           </div>
         </div>
         <div class="tm-bookie-content">Waiting for Torn data...</div>
       `;
-      panel.classList.toggle('tm-no-powered-sources', !getInitialHeaderSources().length);
+      panel.classList.add('tm-no-powered-sources');
 
       document.body.appendChild(panel);
 
@@ -8824,6 +8822,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-y: overlay;
+  scrollbar-gutter: auto;
   padding-bottom: 14px;
   box-sizing: border-box;
   background: var(--tm-bg);
