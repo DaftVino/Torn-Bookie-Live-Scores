@@ -734,6 +734,8 @@
   let capturedBookieData  = null;
   let lastRenderTimer     = null;
   let lastUpdatedText     = '';
+  let isRefreshingPanel   = false;
+  let lastRefreshErrorMessage = '';
   let isPanelHidden       = false;
   let copyToolsCollapsed  = false;
   let settingsCollapsed   = true;
@@ -5928,6 +5930,17 @@
     return `<div class="tm-det-status-note">${escapeHtml(text)}</div>`;
   }
 
+  function renderDetailsSkeletonRows(rowCount = 3) {
+    const safeCount = Math.max(1, Math.min(5, Number(rowCount) || 3));
+    return `<div class="tm-det-skeleton" aria-hidden="true">${Array.from({ length: safeCount }, () => '<div class="tm-det-skeleton-row"></div>').join('')}</div>`;
+  }
+
+  function renderDetailsSkeleton(sectionName) {
+    if (sectionName === 'bettingPanel') return renderDetailsSkeletonRows(4);
+    if (sectionName === 'teamStats' || sectionName === 'commentary') return renderDetailsSkeletonRows(3);
+    return renderDetailsSkeletonRows(2);
+  }
+
   function renderDetailsList(items) {
     const visible = (items || []).filter(Boolean);
     if (!visible.length) return renderDetailsStatus('Not available.');
@@ -6062,7 +6075,7 @@
 
   function renderDetailsSectionBody(enrichment, match, sectionName) {
     const section = enrichment?.[sectionName];
-    if (enrichment?.loadingSections?.[sectionName]) return renderDetailsStatus('Loading...');
+    if (enrichment?.loadingSections?.[sectionName]) return renderDetailsSkeleton(sectionName);
 
     if (sectionName === 'identity') {
       const identity = enrichment.identity || {};
@@ -6078,7 +6091,12 @@
 
     if (sectionName === 'score') {
       const score = enrichment.score || {};
-      if (!score.found) return renderDetailsStatus(match?.score?.detail || 'Not available.');
+      if (!score.found) {
+        const fallback = uiSettings.enableDebugMode && match?.score?.detail
+          ? `Score source did not return this match. (${match.score.detail})`
+          : 'Score source did not return this match.';
+        return renderDetailsStatus(fallback);
+      }
       return `
         <div class="tm-det-row tm-det-score-row">
           <span class="tm-det-team">${escapeHtml(enrichment.identity?.team1 || '?')}</span>
@@ -6093,7 +6111,7 @@
     }
 
     if (sectionName === 'teamStats') {
-      if (!section?.found) return renderDetailsStatus('Not available.');
+      if (!section?.found) return renderDetailsStatus('Team snapshot unavailable from the current sources.');
       const stats = [
         ...(section.teams || []).map(team => team.summary || team.name || ''),
         ...(section.recentForm || []).map(form => form.summary || form.label || '')
@@ -6168,7 +6186,23 @@
           <div class="tm-det-title">${escapeHtml(identity.name || 'Selected match')}</div>
           <div class="tm-det-header-meta">${escapeHtml(meta)}${sourceLine ? ` ${sourceLine}` : ''}</div>
         </div>
-        <button class="tm-det-close" type="button" title="Close details">x</button>
+        <button class="tm-det-close" type="button" title="Close details" aria-label="Close details">x</button>
+      </div>`;
+  }
+
+  function renderDetailsSummaryStrip(enrichment, match) {
+    const identity = enrichment.identity || {};
+    const score = enrichment.score || {};
+    const scoreSummary = score.found
+      ? `${identity.team1 || '?'} ${score.team1Score ?? '-'} - ${score.team2Score ?? '-'} ${identity.team2 || '?'}`
+      : (identity.startTimestamp ? `Starts ${formatStartTime(identity.startTimestamp)}` : (match?.status || 'Score pending'));
+    const sourceSummary = score.found
+      ? `${score.sourceLabel || 'Matched source'}${score.updatedAt ? ` - ${new Date(score.updatedAt).toLocaleTimeString()}` : ''}`
+      : 'Awaiting a matching score source';
+    return `
+      <div class="tm-det-summary-strip">
+        <div class="tm-det-summary-score">${escapeHtml(scoreSummary)}</div>
+        <div class="tm-det-summary-meta">${escapeHtml(sourceSummary)}</div>
       </div>`;
   }
 
@@ -6208,6 +6242,7 @@
     buildCommentary(enrichment);
     return `
       ${renderDetailsHeader(enrichment)}
+      ${renderDetailsSummaryStrip(enrichment, match)}
       <div class="tm-det-body">
         ${getVisibleSections(match).map(sectionName => renderDetailsSection(enrichment, match, sectionName)).join('')}
       </div>`;
@@ -7294,9 +7329,14 @@
   // -- Updated bar + refresh pill ------------------------------------------------
 
   function renderUpdatedBar() {
+    const stateText = isRefreshingPanel
+      ? '<span class="tm-bookie-updated-state tm-bookie-updated-state-refreshing" role="status" aria-live="polite">Refreshing...</span>'
+      : (lastRefreshErrorMessage
+        ? `<span class="tm-bookie-updated-state tm-bookie-updated-state-warning" title="${escapeHtml(lastRefreshErrorMessage)}">Refresh issue</span>`
+        : '');
     return `
       <div class="tm-bookie-updated">
-        <span class="tm-bookie-updated-text">Scores Updated ${escapeHtml(lastUpdatedText)}</span>
+        <span class="tm-bookie-updated-text">Scores Updated ${escapeHtml(lastUpdatedText)} ${stateText}</span>
         <span class="tm-bookie-refresh-pill" aria-label="Score refresh interval">
           <button class="tm-bookie-refresh-mode" data-mode="10s" type="button">10s</button>
           <button class="tm-bookie-refresh-mode" data-mode="30s" type="button">30s</button>
@@ -7578,8 +7618,54 @@
 
   function renderPanel(liveMatches, upcomingMatches) {
     lastUpdatedText = new Date().toLocaleTimeString();
+    lastRefreshErrorMessage = '';
     latestRenderableMatches = [...liveMatches, ...upcomingMatches];
     rerenderPanel();
+  }
+
+  function getByokMissingProviders() {
+    const missing = [];
+    if (uiSettings.enabledProviders?.apisports === true && !hasApiSportsKey()) missing.push('API-Sports key missing');
+    if (uiSettings.enabledProviders?.pandascore === true && !hasPandaScoreToken()) missing.push('PandaScore token missing');
+    return missing;
+  }
+
+  function renderEmptyState(title, detail) {
+    return `
+      <div class="tm-bookie-empty tm-bookie-empty-block">
+        <div class="tm-bookie-empty-title">${escapeHtml(title)}</div>
+        ${detail ? `<div class="tm-bookie-empty-detail">${escapeHtml(detail)}</div>` : ''}
+      </div>`;
+  }
+
+  function renderLiveEmptyState(upcomingCount) {
+    const missingByok = getByokMissingProviders();
+    if (upcomingCount > 0) {
+      return renderEmptyState('No live bets to show', 'Upcoming games are still available below.');
+    }
+    if (uiSettings.hideUnmatchedGames) {
+      return renderEmptyState('No live games match the current display settings', 'Turn off Hide unmatched in Settings to show all live bets.');
+    }
+    if (missingByok.length) {
+      return renderEmptyState('No live bets available from enabled sources', `Check provider keys in Settings: ${missingByok.join(', ')}.`);
+    }
+    return renderEmptyState('No live supported bets right now', 'Try Refresh now or review provider and sport settings.');
+  }
+
+  function renderUpcomingEmptyState(liveCount) {
+    if (liveCount > 0) {
+      return renderEmptyState('No upcoming bets to show', 'Live games are still available above.');
+    }
+    return renderEmptyState('No upcoming supported bets right now', 'Check disabled sports or providers in Settings.');
+  }
+
+  function renderGlobalHiddenState() {
+    return renderEmptyState('No games match the current display settings', 'Enable Live or Upcoming in Settings to restore the list.');
+  }
+
+  function renderRefreshWarning() {
+    if (!lastRefreshErrorMessage || isRefreshingPanel) return '';
+    return `<div class="tm-bookie-refresh-warning" role="status" aria-live="polite">${escapeHtml(lastRefreshErrorMessage)} Using the last successful scores. Click Refresh now to retry.</div>`;
   }
 
   function rerenderPanel() {
@@ -7601,9 +7687,10 @@
 
     content.innerHTML = `
       ${renderUpdatedBar()}
-      ${uiSettings.showLive     ? liveHtml     || '<div class="tm-bookie-section-title">Live</div><div class="tm-bookie-empty">No live supported bets right now.</div>'     : ''}
-      ${uiSettings.showUpcoming ? upcomingHtml || '<div class="tm-bookie-section-title">Upcoming</div><div class="tm-bookie-empty">No upcoming supported bets right now.</div>' : ''}
-      ${!uiSettings.showLive && !uiSettings.showUpcoming ? '<div class="tm-bookie-empty">Live and upcoming sections are hidden in Settings.</div>' : ''}
+      ${renderRefreshWarning()}
+      ${uiSettings.showLive     ? liveHtml     || `<div class="tm-bookie-section-title">Live</div>${renderLiveEmptyState(upcomingMatches.length)}`     : ''}
+      ${uiSettings.showUpcoming ? upcomingHtml || `<div class="tm-bookie-section-title">Upcoming</div>${renderUpcomingEmptyState(liveMatches.length)}` : ''}
+      ${!uiSettings.showLive && !uiSettings.showUpcoming ? renderGlobalHiddenState() : ''}
       ${renderCopyTools()}
       ${renderSettingsTools()}`;
 
@@ -7628,17 +7715,36 @@
     return escapeHtml(message);
   }
 
+  function getRefreshErrorSummary(error) {
+    const message = String(error?.message || error || 'Unknown error');
+    const lower = message.toLowerCase();
+    if (lower.includes('failed to fetch') || lower.includes('network') || lower.includes('timeout')) {
+      return 'Network issue while contacting score providers.';
+    }
+    if (lower.includes('api-sports') && lower.includes('key')) {
+      return 'API-Sports key is missing or unavailable.';
+    }
+    if (lower.includes('pandascore') && lower.includes('token')) {
+      return 'PandaScore token is missing or unavailable.';
+    }
+    return 'Refresh failed.';
+  }
+
   function renderError(error) {
     const panel   = getOrCreatePanel();
     const content = panel.querySelector('.tm-bookie-content');
+    const summary = getRefreshErrorSummary(error);
+    const detail = renderErrorBody(error);
+    const action = 'Try Refresh now. Check source settings and keys if this continues.';
     clearActiveDetails();
     latestRenderableMatches = [];
     const det = document.getElementById(DETAILS_ID);
     if (det) det.style.display = 'none';
     content.innerHTML = `
       <div class="tm-bookie-error">
-        Could not load live scores.<br>
-        ${renderErrorBody(error)}
+        <div class="tm-bookie-empty-title">${escapeHtml(summary)}</div>
+        <div class="tm-bookie-empty-detail">${escapeHtml(action)}</div>
+        ${uiSettings.enableDebugMode ? `<div class="tm-bookie-error-debug">${detail}</div>` : ''}
       </div>
       ${renderCopyTools()}
       ${renderSettingsTools()}`;
@@ -8334,6 +8440,36 @@
 #${PANEL_ID} .tm-bookie-updated-text {
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#${PANEL_ID} .tm-bookie-updated-state {
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+#${PANEL_ID} .tm-bookie-updated-state-refreshing {
+  color: var(--tm-info);
+}
+
+#${PANEL_ID} .tm-bookie-updated-state-refreshing::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border: 2px solid color-mix(in srgb, var(--tm-info) 35%, transparent);
+  border-top-color: var(--tm-info);
+  border-radius: 999px;
+  animation: tm-bookie-spin 0.8s linear infinite;
+}
+
+#${PANEL_ID} .tm-bookie-updated-state-warning {
+  color: var(--tm-warning);
 }
 
 #${PANEL_ID} .tm-bookie-refresh-pill {
@@ -9195,6 +9331,39 @@
   color: var(--tm-meta);
 }
 
+#${PANEL_ID} .tm-bookie-empty-title {
+  color: var(--tm-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+#${PANEL_ID} .tm-bookie-empty-detail {
+  margin-top: 4px;
+  color: var(--tm-meta);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#${PANEL_ID} .tm-bookie-refresh-warning {
+  margin: 8px 12px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--tm-warning) 42%, var(--tm-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tm-warning-bg) 72%, var(--tm-bg-2));
+  color: var(--tm-meta);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+#${PANEL_ID} .tm-bookie-error-debug {
+  margin-top: 6px;
+  color: var(--tm-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 #${PANEL_ID} .tm-bookie-error {
   color: var(--tm-bad);
 }
@@ -9343,6 +9512,9 @@
   padding: 10px 10px 8px;
   border-bottom: 1px solid var(--tm-border);
   background: var(--tm-bg-2);
+  position: sticky;
+  top: 0;
+  z-index: 2;
   border-radius: 10px 10px 0 0;
 }
 
@@ -9412,6 +9584,26 @@
 
 .tm-det-close:hover { color: var(--tm-bad); }
 
+.tm-det-summary-strip {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--tm-border);
+  background: color-mix(in srgb, var(--tm-bg-3) 86%, transparent);
+}
+
+.tm-det-summary-score {
+  color: var(--tm-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.tm-det-summary-meta {
+  margin-top: 2px;
+  color: var(--tm-meta);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .tm-det-venue { font-size: 10.5px; color: var(--tm-meta); }
 .tm-det-status { font-size: 10.5px; color: var(--tm-accent); }
 .tm-det-no-score { font-size: 10.5px; color: var(--tm-muted); }
@@ -9452,6 +9644,31 @@
 .tm-det-status-note {
   color: var(--tm-meta);
   font-size: 11px;
+}
+
+.tm-det-skeleton {
+  display: grid;
+  gap: 5px;
+  margin: 1px 0;
+}
+
+.tm-det-skeleton-row {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tm-bg-3) 82%, var(--tm-border)) 20%, color-mix(in srgb, var(--tm-hover) 58%, var(--tm-bg-3)) 50%, color-mix(in srgb, var(--tm-bg-3) 82%, var(--tm-border)) 80%);
+  background-size: 220% 100%;
+  animation: tm-det-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes tm-det-skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-det-skeleton-row {
+    animation: none;
+  }
 }
 
 .tm-det-list {
@@ -9929,6 +10146,7 @@
 
   async function refreshPanel({ manual = false } = {}) {
     const refreshContext = { manualRefresh: manual === true };
+    const hadRenderableData = latestRenderableMatches.length > 0;
     // A manual refresh clears the api-sports date keys once up-front so the next
     // fetch per sport/date hits the network exactly once (later same-date matches
     // then dedup on the freshly-cached board). Auto/interval refreshes leave the
@@ -9938,6 +10156,9 @@
         if (key.startsWith('apisports:') || key.startsWith('apifootball:')) providerCache.delete(key);
       }
     }
+    isRefreshingPanel = true;
+    if (hadRenderableData) rerenderPanel();
+    let shouldKeepErrorPanel = false;
     try {
       getOrCreatePanel();
 
@@ -9959,7 +10180,16 @@
     } catch (error) {
       recordDebugEvent('refresh-panel-error', { error });
       console.warn('[Torn Bookie Live Scores Panel]', error.message || error);
-      renderError(error);
+      if (hadRenderableData) {
+        lastRefreshErrorMessage = getRefreshErrorSummary(error);
+        rerenderPanel();
+      } else {
+        shouldKeepErrorPanel = true;
+        renderError(error);
+      }
+    } finally {
+      isRefreshingPanel = false;
+      if (!shouldKeepErrorPanel && latestRenderableMatches.length) rerenderPanel();
     }
   }
 
