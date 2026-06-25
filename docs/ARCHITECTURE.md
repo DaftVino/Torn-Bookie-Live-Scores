@@ -52,6 +52,7 @@ Representative effective ladders with an API-Sports key configured:
 
 ```text
 Live tennis: SofaScore live board -> ESPN tennis date board
+Live football: SofaScore live board -> ESPN soccer date board (if primary) -> API-Football
 World Cup / mapped ESPN soccer: ESPN -> SofaScore -> API-Football
 Unmapped soccer: SofaScore -> API-Football
 Rugby union: SofaScore -> API-Sports -> LiveScore
@@ -64,6 +65,8 @@ SofaScore is still active in the current code. It uses `www.sofascore.com/api/v1
 
 Tennis is deliberately special-cased. Live tennis tries SofaScore's live board before ESPN because the ESPN date board does not cover all Challenger tournaments. ESPN remains the no-key fallback for covered ATP/WTA/Grand Slam rows and must keep its grouped date-board parser. Do not collapse tennis back to generic ESPN-primary routing without fresh debug evidence and regression tests.
 
+Live football is also special-cased for SofaScore. It checks the SofaScore live board first, but if that board is reachable and no confident football match is found, it does not continue into SofaScore scheduled-events date boards for that same live match. Upcoming football still uses the scheduled-events date-board plan.
+
 ## Matching And Date Planning
 
 Provider candidates are normalized into a shared candidate shape, then scored by:
@@ -75,6 +78,10 @@ Provider candidates are normalized into a shared candidate shape, then scored by
 - cached resolved-event reuse.
 
 `resolveProviderMatch` walks a bounded lookup plan for each provider and returns the first accepted candidate. It flags close candidates as ambiguous rather than guessing. Timestamp handling uses UTC provider dates and rejects bare ISO strings without timezone data.
+
+Football has an extra alias/fuzzy layer that is not applied to other sports. The script bundles compact alias groups generated from `openfootball/clubs`, pinned to commit `ae3800227c449447b3a337fc0aac79a8f02f4c8b` under `CC0-1.0`. GitHub is not fetched at runtime; the bundled data is attribution and update provenance only.
+
+The football matcher lazily expands normalized club names to alias-group IDs, rejects high-confidence matches from ambiguous one-token aliases, supports acronym/full-name bridges, and uses bounded token fuzzy matching for provider variants. Football candidate acceptance remains pair-oriented: both teams and the home/away orientation must fit, and close reverse-orientation candidates are treated as ambiguous.
 
 ## Caching And Request Control
 
