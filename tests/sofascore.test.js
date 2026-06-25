@@ -138,6 +138,54 @@ test('SofaScore non-live tennis keeps the date schedule endpoint', async () => {
   assert.ok(a.__control.gmRequests.every(req => !req.url.endsWith('/events/live')));
 });
 
+test('SofaScore live football uses events/live before the date schedule endpoint', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: (req) => {
+      const body = req.url.endsWith('/events/live') ? makeSofascoreBoard({ code: 9, description: '1st half', type: 'inprogress' }) : { events: [] };
+      return {
+        type: 'load',
+        response: { status: 200, responseText: JSON.stringify(body), responseHeaders: '' }
+      };
+    }
+  });
+  a.__resetCaches();
+  a.setSofascoreToken('stored-token', Date.UTC(2026, 5, 22, 12, 0, 0));
+
+  const result = await a._findSofascore(makeMatch({
+    sectionType: 'live',
+    status: '1st half',
+    rawStatus: 'inprogress',
+    startTimestamp: String(Date.UTC(2026, 5, 22, 18, 0, 0))
+  }));
+
+  assert.equal(result.found, true, result.detail);
+  assert.equal(a.__control.gmRequests.length, 1);
+  assert.ok(a.__control.gmRequests[0].url.endsWith('/api/v1/sport/football/events/live'));
+  assert.equal(result.team1Score, 2);
+  assert.equal(result.team2Score, 1);
+  assert.equal(result.detail, '1st half');
+  assert.equal(result.providerEventId, 123);
+});
+
+test('SofaScore non-live football keeps the date schedule endpoint', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 200, responseText: JSON.stringify({ events: [] }), responseHeaders: '' }
+    })
+  });
+  a.__resetCaches();
+
+  await a.resolveSofascoreMatch(makeMatch({
+    sectionType: 'upcoming',
+    status: 'notstarted'
+  }), 'football');
+
+  assert.equal(a.__control.gmRequests.length, 3);
+  assert.ok(a.__control.gmRequests.every(req => req.url.includes('/api/v1/sport/football/scheduled-events/')));
+  assert.ok(a.__control.gmRequests.every(req => !req.url.endsWith('/events/live')));
+});
+
 test('SofaScore token store uses fallback, stored value, and timestamp', () => {
   const a = loadUserscript();
   assert.equal(a.getSofascoreToken(), 'e06c91');

@@ -2927,7 +2927,7 @@
     const live = isActuallyLive(match);
     const currentMs = getLiveRecoveryMs(match);
     let plan = [];
-    if (live && match?.sportKey === 'tennis') {
+    if (live && (match?.sportKey === 'tennis' || match?.sportKey === 'football')) {
       plan.push({
         anchorKind: 'sofascore-live',
         anchorMs: currentMs || anchorMs || Date.now(),

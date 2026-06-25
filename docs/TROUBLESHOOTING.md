@@ -66,6 +66,14 @@ For live tennis specifically, a healthy report should usually show one successfu
 
 Multiple live tennis rows should coalesce onto the same cache key, `sofascore:tennis:live`. If live tennis falls back to ESPN only, check whether SofaScore returned 401/403/token errors, not just a 404 from the date schedule path.
 
+For live football specifically, a healthy report should usually show one successful `www.sofascore.com` request to:
+
+```text
+/api/v1/sport/football/events/live
+```
+
+Multiple live football rows should coalesce onto the same cache key, `sofascore:football:live`. If live football shows as unmatched but SofaScore date schedule endpoints return repeated 404s, check the debug report's network events to confirm whether the live board endpoint was attempted. If the live board was not attempted, verify that `isActuallyLive(match)` is returning true for those rows (check `sectionType === 'live'` or live status tokens).
+
 ### API-Sports or API-Football does not fetch
 
 API-Sports is BYOK and manual-only by default.
@@ -93,7 +101,7 @@ If it still fails:
 
 The debug report includes SofaScore token age and whether a refresh was queued. It does not include the token value.
 
-Do not treat a SofaScore HTTP 404 as a token problem. For tennis, the date schedule path can return 404 while the live tennis endpoint works. A token refresh is expected only for 401/403, forbidden, or challenge-like responses.
+Do not treat a SofaScore HTTP 404 as a token problem. For tennis and football, the date schedule path can return 404 while the live events endpoint works. A token refresh is expected only for 401/403, forbidden, or challenge-like responses.
 
 ### BBC Sport parser failed
 

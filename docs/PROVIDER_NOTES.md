@@ -25,6 +25,7 @@ Representative effective ladders with an API-Sports key configured:
 
 ```text
 Live tennis: SofaScore live board -> ESPN tennis date board
+Live football: SofaScore live board -> ESPN soccer date board (if primary) -> SofaScore date board -> API-Football
 World Cup / mapped ESPN soccer: ESPN -> SofaScore -> API-Football
 Unmapped soccer: SofaScore -> API-Football
 Rugby union: SofaScore -> API-Sports -> LiveScore
@@ -151,13 +152,14 @@ Current date-board host:
 https://www.sofascore.com/api/v1/sport/{slug}/scheduled-events/{YYYY-MM-DD}
 ```
 
-Important tennis exception:
+Important live-sport exception:
 
 ```text
 https://www.sofascore.com/api/v1/sport/tennis/events/live
+https://www.sofascore.com/api/v1/sport/football/events/live
 ```
 
-Live tennis must use the live board before the date-board plan. The date-board tennis endpoint returned HTTP 404 in the 2026-06-25 reports, while the live board returned HTTP 200 and resolved all 10 live tennis rows, including Plovdiv and Targu Mures Challenger matches. Non-live/upcoming tennis still uses the date-board plan.
+Live tennis and live football must use the live board before the date-board plan. The date-board tennis endpoint returned HTTP 404 in the 2026-06-25 reports, while the live board returned HTTP 200 and resolved all 10 live tennis rows, including Plovdiv and Targu Mures Challenger matches. Similarly, live football matches are available on the live board endpoint when date-board scheduled-events endpoints return 404. Non-live/upcoming tennis and football continue to use the date-board plan.
 
 SofaScore is still wired in the current code. It is a free provider, but it is token-sensitive: requests require an `x-requested-with` token. The script stores the latest captured token, uses it in score/H2H requests, and can refresh it through a background SofaScore tab after a token rejection.
 
@@ -184,6 +186,8 @@ Regression guardrails:
 
 - keep `SofaScore live tennis uses events/live before the date schedule endpoint`,
 - keep `SofaScore non-live tennis keeps the date schedule endpoint`,
+- keep `SofaScore live football uses events/live before the date schedule endpoint`,
+- keep `SofaScore non-live football keeps the date schedule endpoint`,
 - keep `SofaScore 404 reports endpoint failure without token refresh`,
 - keep ESPN tennis grouped/date-only parser tests.
 

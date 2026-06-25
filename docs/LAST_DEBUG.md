@@ -1,5 +1,29 @@
 # Last Debug Capture
 
+## Live Football Live Board Fix (2026-06-25)
+
+**Issue**: Live football matches like `Grobina v Auda` were not found when SofaScore was queried.
+
+**Root Cause**: The SofaScore provider only attempted date-based scheduled-events endpoints (`/api/v1/sport/football/scheduled-events/YYYY-MM-DD`), which were returning HTTP 404. Live football matches are available on the live events board at `/api/v1/sport/football/events/live`, which was not being queried.
+
+**Fix Applied**:
+- Modified `buildSofascoreLookupPlan()` to treat live football the same as live tennis: when `isActuallyLive(match)` is true and `match.sportKey === 'football'`, the plan now includes the live board endpoint first.
+- Live board results are cached as `sofascore:football:live` (parallel to tennis).
+- If a confident match is found on the live board, the lookup stops (no fallback to date boards for live matches).
+- Non-live/upcoming football continues to use only scheduled-events date boards; behavior unchanged.
+- Added regression tests:
+  - Live football queries `/api/v1/sport/football/events/live` and succeeds when a match is found there.
+  - Non-live football still queries only `/scheduled-events/YYYY-MM-DD` endpoints.
+  - SofaScore HTTP 404 on scheduled-events does not trigger token refresh (normal endpoint failure).
+
+**Fallback chain now**:
+- Live football: SofaScore live board → SofaScore date boards → API-Football (if enabled) → BBC
+- Upcoming football: SofaScore date boards → API-Football (if enabled) → BBC (unchanged)
+
+**Quota Impact**: None. SofaScore is a free public API; no API-Football BYOK calls are made for live football (matching the existing design for tennis).
+
+---
+
 Source attachment:
 
 `C:\Users\jm3ak\.codex\attachments\15222201-26db-475d-85d1-be1d104916dd\pasted-text.txt`
