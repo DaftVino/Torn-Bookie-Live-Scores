@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
 // @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
-// @version      2.5.8
+// @version      2.5.9
 // @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, ESPNcricinfo, API-Football/API-Sports (BYOK), SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
 // @author       DaftVino
 // @license      MIT
@@ -80,6 +80,7 @@
   const DETAILS_WIDTH = 288;  // must match .tm-bookie-details width in CSS
   const EDGE_GAP      = 12;   // must match panel right/left offset in CSS
   const PANEL_TOP     = 90;   // must match panel/details fixed top alignment
+  const TOAST_MOBILE_MAX_WIDTH = 420; // must match action notice compact media query
 
   const COPY_SEP    = '-'.repeat(60);
   const COMPACT_RANGE = 3;
@@ -753,6 +754,8 @@
   let latestRenderableMatches = [];
   let detailsResizeListenerBound = false;
   let detailsResizeTimer = null;
+  let toastResizeListenerBound = false;
+  let toastResizeTimer = null;
   let lastDetailsTriggerSelector = '';
   let keyboardInteractionListenerBound = false;
 
@@ -1217,6 +1220,7 @@
         team1Score: score.team1Score ?? '',
         team2Score: score.team2Score ?? '',
         detail: score.detail || '',
+        userDetail: score.userDetail || '',
         unmatched: !!score.unmatched,
         providersTried: score.providersTried || [],
         providerErrors: score.providerErrors || [],
@@ -2830,6 +2834,30 @@
     return `${label}: events found${dateText}; no confident team match${topText}`;
   }
 
+  function summarizeUserUnmatchedResult(result) {
+    const supportHint = 'This may be an unusual game format or a Torn team alias/title mismatch. Send your debug report and the game title to the developer for help.';
+    if ((result?.errors || []).length && !(result?.eventCount || 0) && !(result?.parseFailures || []).length) {
+      return `Score provider is temporarily unavailable for this game. ${supportHint}`;
+    }
+    if ((result?.parseFailures || []).length && !(result?.eventCount || 0)) {
+      return `Score feed returned incomplete data for this game. ${supportHint}`;
+    }
+    if (!(result?.eventCount || 0)) {
+      return `No matching game listing was found yet. ${supportHint}`;
+    }
+    return `Could not confidently match this game title to a provider listing. ${supportHint}`;
+  }
+
+  function getScoreDisplayDetail(score, fallback = '') {
+    if (!score) return fallback;
+    if (score.found) return score.detail || fallback;
+    if (score.userDetail) return score.userDetail;
+    if (score.unmatched) {
+      return 'Score unavailable. This may be an unusual game format or a Torn team alias/title mismatch. Send your debug report and the game title to the developer for help.';
+    }
+    return score.detail || fallback;
+  }
+
   // -- Provider response cache ---------------------------------------------------
 
   async function fetchWithCache(cacheKey, fetchFn, successTtl = TTL_SUCCESS, errorTtl = TTL_ERROR) {
@@ -3324,6 +3352,7 @@
       return {
         found: false,
         detail: summarizeProviderResult(sourceLabel, result),
+        userDetail: summarizeUserUnmatchedResult(result),
         candidateDiagnostics: result?.candidateDiagnostics || [],
         statusDiagnostics: result?.statusDiagnostics || [],
         parserDiagnostics: result?.parserDiagnostics || [],
@@ -5582,6 +5611,7 @@
     if (!panel) return;
     applyPanelClasses();
     panel.classList.toggle('tm-bookie-panel-hidden', isPanelHidden);
+    positionActionNotice();
     const button = panel.querySelector('.tm-bookie-panel-toggle');
     if (!button) return;
     const isLeft = uiSettings.layoutSide === 'left';
@@ -5666,6 +5696,8 @@
     notice.appendChild(progress);
 
     document.body.appendChild(notice);
+    positionActionNotice(notice);
+    ensureActionNoticeResizeListener();
     if (normalizedType !== 'loading' && noticeTimeout > 0) {
       setTimeout(() => {
         if (notice.isConnected) notice.remove();
@@ -5739,7 +5771,7 @@
   function renderScoreboard(match) {
     const score = match.score;
     if (!score?.found) {
-      return `<div class="tm-bookie-unmatched">Score not matched: ${escapeHtml(score?.detail || 'No Games Matched')}</div>`;
+      return `<div class="tm-bookie-unmatched">Score not matched: ${escapeHtml(getScoreDisplayDetail(score, 'No Games Matched'))}</div>`;
     }
     if (uiSettings.scoreboardStyle === 'minimal') return renderMinimalScoreboard(match, score);
     if (uiSettings.scoreboardStyle === 'classic') return renderClassicScoreboard(match, score);
@@ -5775,7 +5807,7 @@
   }
 
   function renderMinimalScoreboard(match, score) {
-    const statusText = score.detail || match.status || '';
+    const statusText = getScoreDisplayDetail(score, match.status || '');
     const betHtml = uiSettings.showBetAmount
       ? `<span class="tm-bookie-minimal-bet">${escapeHtml(formatMoney(match.amount))}</span>`
       : '';
@@ -5867,6 +5899,10 @@
     const detailsBtn = renderDetailsButton(match, rowState);
     const pillHtml = renderMatchStatusPills(match, rowState);
     const rowClasses = getMatchRowClassNames(['tm-bookie-row', 'tm-bookie-live-row'], rowState);
+    const statusText = match.score?.found
+      ? getScoreDisplayDetail(match.score, match.status || '')
+      : (match.status || '');
+    const showStatusLine = !!(statusText || uiSettings.showBetAmount);
 
     const hideStatusLine = uiSettings.scoreboardStyle === 'minimal' && match.score?.found;
     return `
@@ -5880,9 +5916,9 @@
         </div>
         ${scoreHtml}
         <div class="tm-bookie-meta">${escapeHtml(metaParts.filter(Boolean).join(' - '))}</div>
-        ${hideStatusLine ? '' : `
+        ${(hideStatusLine || !showStatusLine) ? '' : `
         <div class="tm-bookie-status-line">
-          <span class="tm-bookie-status">${escapeHtml(match.score?.detail || match.status)}</span>
+          <span class="tm-bookie-status">${escapeHtml(statusText)}</span>
           ${uiSettings.showBetAmount ? `<span class="tm-bookie-amount"><span class="tm-bookie-bet-label">Bet:</span> ${formatMoney(match.amount)}</span>` : ''}
         </div>`}
       </div>`;
@@ -6117,7 +6153,7 @@
       if (match.score.venue) lines.push(`<span class="tm-det-venue">📍 ${escapeHtml(match.score.venue)}</span>`);
       if (match.score.detail) lines.push(`<span class="tm-det-status">${escapeHtml(match.score.detail)}</span>`);
     } else {
-      lines.push(`<span class="tm-det-no-score">${escapeHtml(match.score?.detail || 'Score unavailable')}</span>`);
+      lines.push(`<span class="tm-det-no-score">${escapeHtml(getScoreDisplayDetail(match.score, 'Score unavailable'))}</span>`);
     }
     return lines.join('<br>');
   }
@@ -6335,9 +6371,7 @@
     if (sectionName === 'score') {
       const score = enrichment.score || {};
       if (!score.found) {
-        const fallback = uiSettings.enableDebugMode && match?.score?.detail
-          ? `Score source did not return this match. (${match.score.detail})`
-          : 'Score source did not return this match.';
+        const fallback = getScoreDisplayDetail(match?.score, 'Score source did not return this match.');
         return renderDetailsStatus(fallback);
       }
       return `
@@ -6610,6 +6644,87 @@
       detailsResizeTimer = setTimeout(() => {
         const det = document.getElementById(DETAILS_ID);
         if (det && det.style.display !== 'none') positionDetailsPane(det);
+      }, 150);
+    });
+  }
+
+  function getActionNoticePlacement() {
+    const layoutSide = uiSettings.layoutSide === 'left' ? 'left' : 'right';
+    if (window.innerWidth <= TOAST_MOBILE_MAX_WIDTH) {
+      return { mode: 'compact', layoutSide };
+    }
+
+    const fallback = {
+      mode: 'fallback',
+      layoutSide,
+      width: `${DETAILS_WIDTH}px`,
+      bottom: `${EDGE_GAP}px`,
+      left: layoutSide === 'left' ? `${EDGE_GAP}px` : 'auto',
+      right: layoutSide === 'right' ? `${EDGE_GAP}px` : 'auto'
+    };
+
+    const panel = document.getElementById(PANEL_ID);
+    const rect = panel?.getBoundingClientRect?.();
+    const panelHidden = panel?.classList?.contains?.('tm-bookie-panel-hidden') === true;
+    const hasUsableRect = rect
+      && Number.isFinite(rect.left)
+      && Number.isFinite(rect.right)
+      && Number.isFinite(rect.bottom)
+      && Number.isFinite(rect.width)
+      && Number.isFinite(rect.height)
+      && rect.width > 0
+      && rect.height > 0;
+
+    if (!panel || panelHidden || !hasUsableRect) return fallback;
+
+    const bottom = Math.max(EDGE_GAP, Math.round(window.innerHeight - rect.bottom));
+    const placement = {
+      mode: 'adjacent',
+      layoutSide,
+      width: `${DETAILS_WIDTH}px`,
+      bottom: `${bottom}px`,
+      left: 'auto',
+      right: 'auto'
+    };
+
+    const adjacentOffset = PANEL_WIDTH + EDGE_GAP * 2;
+    if (layoutSide === 'right') {
+      if (adjacentOffset + DETAILS_WIDTH > window.innerWidth - EDGE_GAP) return fallback;
+      placement.right = `${adjacentOffset}px`;
+      return placement;
+    }
+
+    if (adjacentOffset + DETAILS_WIDTH > window.innerWidth - EDGE_GAP) return fallback;
+    placement.left = `${adjacentOffset}px`;
+    return placement;
+  }
+
+  function resetActionNoticePosition(notice) {
+    if (!notice) return;
+    notice.style.left = '';
+    notice.style.right = '';
+    notice.style.bottom = '';
+    notice.style.width = '';
+  }
+
+  function positionActionNotice(notice = document.getElementById(TOAST_ID)) {
+    if (!notice) return;
+    resetActionNoticePosition(notice);
+    const placement = getActionNoticePlacement();
+    if (placement.mode === 'compact') return;
+    notice.style.width = placement.width;
+    notice.style.bottom = placement.bottom;
+    notice.style.left = placement.left;
+    notice.style.right = placement.right;
+  }
+
+  function ensureActionNoticeResizeListener() {
+    if (toastResizeListenerBound) return;
+    toastResizeListenerBound = true;
+    window.addEventListener('resize', () => {
+      clearTimeout(toastResizeTimer);
+      toastResizeTimer = setTimeout(() => {
+        positionActionNotice();
       }, 150);
     });
   }
@@ -8289,6 +8404,7 @@
   --tm-danger-bg: color-mix(in srgb, var(--tm-bad) 22%, transparent);
   --tm-focus: var(--tm-accent);
   position: fixed;
+  box-sizing: border-box;
   bottom: 24px;
   z-index: 1000000;
   display: grid;
@@ -8461,7 +8577,7 @@
   to { transform: scaleX(0); }
 }
 
-@media (max-width: 420px) {
+@media (max-width: ${TOAST_MOBILE_MAX_WIDTH}px) {
   .tm-bookie-action-notice.tm-layout-left,
   .tm-bookie-action-notice.tm-layout-right {
     left: 12px;

@@ -39,6 +39,37 @@ test('delayed/unmatched (partial-provider) state: shows "Score not matched"', ()
   assert.match(html, /no events/);
 });
 
+test('unmatched score with diagnostics uses concise user guidance', () => {
+  a.__control.setNow(NOW);
+  const m = liveMatch({
+    score: {
+      found: false,
+      unmatched: true,
+      detail: 'SofaScore: events found for live, 2026-06-25; no confident team match; top candidate Example A v Example B (team-confidence, confidence 0)'
+    }
+  });
+  const html = a.renderScoreboard(m);
+  assert.match(html, /Score not matched/);
+  assert.match(html, /unusual game format or a Torn team alias\/title mismatch/i);
+  assert.doesNotMatch(html, /top candidate/i);
+});
+
+test('live unmatched rows do not duplicate the unmatched guidance text', () => {
+  a.__control.setNow(NOW);
+  const m = liveMatch({
+    status: 'Not started',
+    score: {
+      found: false,
+      unmatched: true,
+      userDetail: 'Score unavailable. This may be an unusual game format or a Torn team alias/title mismatch. Send your debug report and the game title to the developer for help.',
+      detail: 'ESPN: events found for 20260625; no confident team match; top candidate Quentin Halys v Toby Samuel (team-confidence, confidence 0)'
+    }
+  });
+  const html = a.renderLiveMatch(m);
+  const matches = html.match(/unusual game format or a Torn team alias\/title mismatch/gi) || [];
+  assert.equal(matches.length, 1);
+});
+
 test('upcoming state: shows match name and start-time prefix', () => {
   a.__control.setNow(NOW);
   const html = a.renderUpcomingMatch(liveMatch({ name: 'Red Sox vs Yankees', sectionType: 'upcoming', status: 'notstarted' }));
@@ -151,6 +182,105 @@ test('debug report includes panel scroll metrics', () => {
   assert.equal(report.panelState.scrollMetrics.content.clientHeight, 720);
   assert.equal(report.panelState.scrollMetrics.settings.offsetTop, 860);
   assert.equal(report.panelState.scrollMetrics.settings.offsetFromContentTop, 860);
+});
+
+function makePanelRect(rect, hidden = false) {
+  return {
+    classList: { contains: cls => hidden && cls === 'tm-bookie-panel-hidden' },
+    getBoundingClientRect: () => rect
+  };
+}
+
+test('action notice placement mirrors right-side panel and aligns panel bottom', () => {
+  const b = loadUserscript();
+  b.uiSettings.layoutSide = 'right';
+  b.__control.window.innerWidth = 1920;
+  b.__control.window.innerHeight = 1080;
+  b.__control.document.getElementById = id => id === 'tm-bookie-live-panel'
+    ? makePanelRect({ left: 1548, right: 1908, bottom: 900, width: 360, height: 780 })
+    : null;
+
+  const placement = b.getActionNoticePlacement();
+  assert.equal(placement.mode, 'adjacent');
+  assert.equal(placement.width, `${b.DETAILS_WIDTH}px`);
+  assert.equal(placement.right, '384px');
+  assert.equal(placement.left, 'auto');
+  assert.equal(placement.bottom, '180px');
+});
+
+test('action notice placement mirrors left-side panel', () => {
+  const b = loadUserscript();
+  b.uiSettings.layoutSide = 'left';
+  b.__control.window.innerWidth = 1920;
+  b.__control.window.innerHeight = 1080;
+  b.__control.document.getElementById = id => id === 'tm-bookie-live-panel'
+    ? makePanelRect({ left: 12, right: 372, bottom: 900, width: 360, height: 780 })
+    : null;
+
+  const placement = b.getActionNoticePlacement();
+  assert.equal(placement.mode, 'adjacent');
+  assert.equal(placement.width, `${b.DETAILS_WIDTH}px`);
+  assert.equal(placement.left, '384px');
+  assert.equal(placement.right, 'auto');
+  assert.equal(placement.bottom, '180px');
+});
+
+test('action notice bottom placement clamps to edge gap', () => {
+  const b = loadUserscript();
+  b.uiSettings.layoutSide = 'right';
+  b.__control.window.innerWidth = 1920;
+  b.__control.window.innerHeight = 1080;
+  b.__control.document.getElementById = id => id === 'tm-bookie-live-panel'
+    ? makePanelRect({ left: 1548, right: 1908, bottom: 1090, width: 360, height: 780 })
+    : null;
+
+  assert.equal(b.getActionNoticePlacement().bottom, `${b.EDGE_GAP}px`);
+});
+
+test('action notice compact placement leaves mobile media query in control', () => {
+  const b = loadUserscript();
+  b.uiSettings.layoutSide = 'right';
+  b.__control.window.innerWidth = b.TOAST_MOBILE_MAX_WIDTH;
+  b.__control.window.innerHeight = 800;
+  b.__control.document.getElementById = id => id === 'tm-bookie-live-panel'
+    ? makePanelRect({ left: 48, right: 408, bottom: 700, width: 360, height: 610 })
+    : null;
+
+  const placement = b.getActionNoticePlacement();
+  assert.equal(placement.mode, 'compact');
+  assert.equal(placement.width, undefined);
+  assert.equal(placement.left, undefined);
+  assert.equal(placement.right, undefined);
+});
+
+test('action notice placement falls back when panel is missing or hidden', () => {
+  const missing = loadUserscript();
+  missing.uiSettings.layoutSide = 'right';
+  missing.__control.window.innerWidth = 1920;
+  missing.__control.document.getElementById = () => null;
+
+  const missingPlacement = missing.getActionNoticePlacement();
+  assert.equal(missingPlacement.mode, 'fallback');
+  assert.equal(missingPlacement.layoutSide, 'right');
+  assert.equal(missingPlacement.width, `${missing.DETAILS_WIDTH}px`);
+  assert.equal(missingPlacement.bottom, `${missing.EDGE_GAP}px`);
+  assert.equal(missingPlacement.left, 'auto');
+  assert.equal(missingPlacement.right, `${missing.EDGE_GAP}px`);
+
+  const hidden = loadUserscript();
+  hidden.uiSettings.layoutSide = 'left';
+  hidden.__control.window.innerWidth = 1920;
+  hidden.__control.document.getElementById = id => id === 'tm-bookie-live-panel'
+    ? makePanelRect({ left: 12, right: 36, bottom: 130, width: 24, height: 40 }, true)
+    : null;
+
+  const hiddenPlacement = hidden.getActionNoticePlacement();
+  assert.equal(hiddenPlacement.mode, 'fallback');
+  assert.equal(hiddenPlacement.layoutSide, 'left');
+  assert.equal(hiddenPlacement.width, `${hidden.DETAILS_WIDTH}px`);
+  assert.equal(hiddenPlacement.bottom, `${hidden.EDGE_GAP}px`);
+  assert.equal(hiddenPlacement.left, `${hidden.EDGE_GAP}px`);
+  assert.equal(hiddenPlacement.right, 'auto');
 });
 
 test('formatGame renders a deterministic copy-tool block', () => {

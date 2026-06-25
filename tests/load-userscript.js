@@ -92,7 +92,7 @@ const EXPORT_NAMES = [
   'renderScoreboard', 'renderCompactScoreboard', 'renderClassicScoreboard',
   'renderMinimalScoreboard', 'renderLiveMatch', 'renderUpcomingMatch',
   'renderSportGroups', 'renderCopyTools', 'renderErrorBody', 'isSportGroupCollapsed',
-  'formatGame', 'compactMarkets',
+  'formatGame', 'compactMarkets', 'getActionNoticePlacement',
   // settings / debug
   'deepMergeSettings', 'isRenderOnlySetting',
   'sanitizeDebugText', 'sanitizeDebugValue', 'isSensitiveDebugKey', 'limitDebugString',
@@ -109,6 +109,7 @@ const EXPORT_NAMES = [
   // shared mutable state / constants
   'providerCache', 'inFlightRequests', 'resolvedEventCache', 'enrichmentCache',
   'uiSettings', 'DEFAULT_UI_SETTINGS', 'CONFIDENCE_THRESHOLD',
+  'PANEL_WIDTH', 'DETAILS_WIDTH', 'EDGE_GAP', 'TOAST_MOBILE_MAX_WIDTH',
   'DAY_MS', 'HOUR_MS', 'MINUTE_MS', 'TTL_SUCCESS', 'TTL_ERROR',
   'TEAM_ALIASES', 'FOOTBALL_CLUB_ALIAS_GROUPS', 'PROVIDER_PRIORITY',
   'SOURCE_ICONS',
