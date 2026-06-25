@@ -1,15 +1,54 @@
 # Changelog
 
-## Unreleased
+## Torn Bookie Live Scores v3.0.0 - 2026-06-25
+
+### Provider Matching Intelligence
 
 - Added a football-only club alias and fuzzy-matching upgrade backed by a bundled compact alias list generated from `openfootball/clubs`.
 - Bundled alias data is pinned to commit `ae3800227c449447b3a337fc0aac79a8f02f4c8b`, attributed under `CC0-1.0`, and is not fetched from GitHub at runtime.
 - Added supplemental football alias groups for observed debug failures, including Moroccan variants such as `RSB Berkane`/`RS Berkane`, `FAR Rabat`/`AS FAR Rabat`, `Renaissance Zemamra`, `OC Safi`, `Difaa El Jadida`, `US Touarga`, `KACM`, `CODM Meknes`, and `MAS Fes`.
 - Added football-only pair-level matching guardrails so weak fuzzy matches are accepted only when both teams and orientation fit, while ambiguous one-token aliases such as `united`, `city`, `rangers`, and `real` do not become high-confidence matches by themselves.
 - Added acronym/full-name football matching for names such as `KACM`, `CODM Meknes`, and `MAS Fes`.
+- Improved containment matcher to reject false positives (e.g., "Mexico" no longer matches "New Mexico") by validating whole-word boundaries.
 - Reduced SofaScore live-football noise: after a reachable live board returns no confident football match, the script no longer continues into `scheduled-events/YYYY-MM-DD` date-board 404s for that same live match. Upcoming football still uses date boards.
 - Clarified API-Sports/API-Football manual-only diagnostics and added `apiSportsRefreshMode` to debug reports.
-- Added regression coverage for the football alias cases, false-positive guards, SofaScore live-football no-date-board fallback, and API-Football manual-only skip wording.
+
+### UI Feedback And Interaction
+
+- Added themed action notices for copy, details, debug report, fallback, and error feedback with semantic colors and auto-dismiss.
+- Added consistent loading, success, error, and disabled states for copy/details/debug buttons with visual feedback.
+- Added selected-game context in Tools summary so users know exactly which Torn bet their actions affect.
+- Added no-selection disabled states preventing accidental actions when no game is selected.
+- Added session-only copy receipts in Tools (metadata stored locally, payload content not persisted).
+- Added selected-row, details-active-row, and unmatched-row visual states with compact status/source/confidence pills.
+- Improved row affordances: added selected-row visual language, confidence badges, and source indicators.
+- Made "no selection" state clear with disabled-state messaging.
+
+### Score Coverage Enhancements
+
+- Added ESPN tennis date-board parsing for the grouped tournament shape returned under `events[].groupings[].competitions[]`.
+- Changed ESPN tennis to try the date-only `tennis/all` board before falling back to verified per-tournament IDs.
+- Added a live-tennis SofaScore fallback through `/api/v1/sport/tennis/events/live`, which covers Challenger matches not present in ESPN's date board.
+- Added SofaScore tennis set-by-set score formatting from period fields, including tiebreak values when present.
+
+### Error Handling And Reliability
+
+- Prevented SofaScore HTTP 404 endpoint failures from triggering token-refresh tabs; token refresh is reserved for auth/challenge failures.
+- Improved `GM_xmlhttpRequest` timeout configuration for better stalled-connection detection (default 12s timeout).
+- Added cache eviction strategy for `providerCache` and `enrichmentCache` to prevent unbounded memory growth over long sessions.
+
+### Metadata And Diagnostics
+
+- Fixed `SCRIPT_VERSION` constant to sync automatically from `@version` header via `GM_info` with fallback.
+- Fixed `@homepage` URL metadata (corrected typo from `hhttps://` to `https://`).
+- Kept copy payload output unchanged; stored only receipt metadata, not copied text.
+- Preserved provider ordering, Settings controls, existing details behavior, and the single-file userscript model.
+
+### Testing And Regression Coverage
+
+- Added comprehensive regression coverage for football alias cases, false-positive guards, SofaScore live-football no-date-board fallback, and API-Football manual-only skip wording.
+- Added characterization tests for confirmed behavior changes and fixes.
+- Ran full test suite (150+ tests) to verify no regressions in provider logic, matching, state extraction, or rendering.
 
 ## Torn Bookie Live Scores v2.5.8 - 2026-06-24
 

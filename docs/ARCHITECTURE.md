@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-06-25
 Production source: `Torn_Bookie_Live_Scores.js`
-Userscript version reviewed: `2.5.8`
+Userscript version reviewed: `3.0.0`
 
 ## Purpose
 

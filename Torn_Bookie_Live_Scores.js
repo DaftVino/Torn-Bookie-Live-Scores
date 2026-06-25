@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
 // @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
-// @version      2.5.9
+// @version      3.0.0
 // @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, ESPNcricinfo, API-Football/API-Sports (BYOK), SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
 // @author       DaftVino
 // @license      MIT

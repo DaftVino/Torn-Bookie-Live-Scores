@@ -1,15 +1,45 @@
 # Roadmap
 
-Last reviewed: 2026-06-24
-Userscript version reviewed: `2.5.7`
+Last reviewed: 2026-06-25
+Userscript version reviewed: `3.0.0`
 
 This roadmap consolidates accepted future work from the local planning docs. It is not a release promise. Keep implementation plans in issues/branches; keep only durable direction here.
+
+## Completed In v3.0.0
+
+### Phase 1: Action Feedback Foundation ✓
+
+Themed action notices, consistent button states, and ARIA live regions are now in place.
+
+- `showActionNotice({ type, title, detail, timeoutMs })` with semantic colors
+- `toast()` compatibility wrapper maintained
+- copy/debug/details button loading/success/error/disabled states
+- Accessible with live-region roles
+
+### Phase 2: Selected-Game Context ✓
+
+Users now see exactly which Torn game their Tools actions affect.
+
+- Selected-game summary in Tools
+- Clear no-selection state with disabled actions
+- Session-only last-copy receipt metadata
+- Jump-to-selected-game affordance
+
+### Phase 3: Row And Refresh States ✓
+
+Improved scanability without changing provider behavior.
+
+- Active row and details-owned row visual language
+- Confidence/source badges from existing metadata
+- Empty/loading/error state indicators
+- Non-blocking refresh indicator keeps old data visible
+- Collapse-all/expand-all sport groups
 
 ## Current Priorities
 
 1. Provider reliability and schema drift.
-2. Debuggability from one sanitized report.
-3. UI feedback and selected-game clarity.
+2. Memory management and cache eviction strategy.
+3. Football matching edge cases and validation.
 4. Betting-context features that use data already present in the panel.
 5. Accessibility and layout robustness without changing the single-file userscript model.
 
@@ -41,51 +71,7 @@ BBC is useful as a disabled-by-default fallback. If it drifts, inspect sanitized
 
 Re-enable removed slugs only after fresh probes and parser tests. Several soccer, basketball, baseball, and American-football endpoints previously returned 404.
 
-## UI And Workflow Roadmap
-
-### Phase 1: Action Feedback Foundation
-
-Replace the plain toast with a themed action notice and consistent button states.
-
-Included:
-
-- `showActionNotice({ type, title, detail, timeoutMs })`,
-- `toast()` compatibility wrapper,
-- copy/debug/details button loading/success/error states,
-- ARIA live behavior,
-- reduced-motion-safe animations.
-
-Guardrails:
-
-- no new network calls,
-- no copied payload persistence,
-- stable button sizes for long labels and all themes.
-
-### Phase 2: Selected-Game Context
-
-Show exactly which Torn game the Tools actions affect.
-
-Included:
-
-- selected-game summary in Tools,
-- clear no-selection state,
-- session-only last-copy receipt,
-- optional keyboard copy shortcut,
-- jump-to-selected-game affordance.
-
-Do not call expensive enrichment from render paths.
-
-### Phase 3: Row And Refresh States
-
-Improve scanability without changing provider behavior.
-
-Included:
-
-- active row and details-owned row visual language,
-- confidence/source badge from existing score metadata,
-- empty/loading/error states,
-- non-blocking refresh indicator that keeps old data visible,
-- collapse-all/expand-all sport groups.
+## Future UI And Workflow Phases
 
 ### Phase 4: Details Pane Hierarchy
 

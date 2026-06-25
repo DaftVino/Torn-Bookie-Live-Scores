@@ -1,7 +1,7 @@
 # Provider Notes
 
 Last reviewed: 2026-06-25
-Userscript version reviewed: `2.5.8`
+Userscript version reviewed: `3.0.0`
 
 These notes preserve the current provider contracts and the still-useful findings from the local research docs. Prefer updating this file when endpoint or parser behavior changes, rather than keeping raw HARs or dated audit plans in the public repo.
 

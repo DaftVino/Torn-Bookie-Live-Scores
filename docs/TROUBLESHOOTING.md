@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Last reviewed: 2026-06-25
-Userscript version reviewed: `2.5.8`
+Userscript version reviewed: `3.0.0`
 
 ## First Checks
 
