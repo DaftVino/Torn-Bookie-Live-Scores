@@ -33,6 +33,25 @@ function makeSofascoreBoard(status = { code: 6 }) {
   };
 }
 
+function makeTennisLiveBoard() {
+  return {
+    events: [{
+      id: 16390001,
+      startTimestamp: Math.floor(Date.UTC(2026, 5, 25, 11, 35, 0) / 1000),
+      homeTeam: { name: 'Sandro Kopp', shortName: 'S. Kopp' },
+      awayTeam: { name: 'Dali Blanch', shortName: 'D. Blanch' },
+      homeScore: { current: 1, display: 1, period1: 6, period2: 3 },
+      awayScore: { current: 0, display: 0, period1: 4, period2: 2 },
+      status: { code: 9, description: '2nd set', type: 'inprogress' },
+      tournament: {
+        name: 'Plovdiv, Bulgaria',
+        category: { name: 'Challenger' },
+        uniqueTournament: { name: 'ATP Challenger Plovdiv, Bulgaria Men Singles' }
+      }
+    }]
+  };
+}
+
 function installSofascoreRefreshCapture(a) {
   const loc = a.__control.window.location;
   loc.origin = 'https://www.sofascore.com';
@@ -62,6 +81,61 @@ test('SofaScore fetch uses www host and x-requested-with token header', async ()
   assert.equal(req.headers.Origin, 'https://www.sofascore.com');
   assert.equal(req.headers.Referer, 'https://www.sofascore.com/');
   assert.equal(req.anonymous, undefined);
+});
+
+test('SofaScore live tennis uses events/live before the date schedule endpoint', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: (req) => {
+      const body = req.url.endsWith('/events/live') ? makeTennisLiveBoard() : { events: [] };
+      return {
+        type: 'load',
+        response: { status: 200, responseText: JSON.stringify(body), responseHeaders: '' }
+      };
+    }
+  });
+  a.__resetCaches();
+  a.setSofascoreToken('stored-token', Date.UTC(2026, 5, 25, 12, 0, 0));
+
+  const result = await a._findSofascore(makeMatch({
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    competition: 'Plovdiv 2026(Challenger)',
+    team1: 'Sandro Kopp',
+    team2: 'Dali Blanch',
+    startTimestamp: String(Date.UTC(2026, 5, 25, 11, 35, 0)),
+    sectionType: 'live',
+    status: '2nd Set',
+    rawStatus: 'inprogress'
+  }));
+
+  assert.equal(result.found, true, result.detail);
+  assert.equal(a.__control.gmRequests.length, 1);
+  assert.ok(a.__control.gmRequests[0].url.endsWith('/api/v1/sport/tennis/events/live'));
+  assert.equal(result.team1Score, '6 3');
+  assert.equal(result.team2Score, '4 2');
+  assert.equal(result.detail, '2nd set');
+  assert.equal(result.providerEventId, 16390001);
+});
+
+test('SofaScore non-live tennis keeps the date schedule endpoint', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 200, responseText: JSON.stringify({ events: [] }), responseHeaders: '' }
+    })
+  });
+  a.__resetCaches();
+
+  await a.resolveSofascoreMatch(makeMatch({
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    sectionType: 'upcoming',
+    status: 'notstarted'
+  }), 'tennis');
+
+  assert.equal(a.__control.gmRequests.length, 3);
+  assert.ok(a.__control.gmRequests.every(req => req.url.includes('/api/v1/sport/tennis/scheduled-events/')));
+  assert.ok(a.__control.gmRequests.every(req => !req.url.endsWith('/events/live')));
 });
 
 test('SofaScore token store uses fallback, stored value, and timestamp', () => {
@@ -128,6 +202,23 @@ test('SofaScore 403 triggers one background token refresh within cooldown', asyn
   assert.equal(a.__control.gmOpenedTabs.length, 1);
   assert.equal(a.__control.gmOpenedTabs[0].url, 'https://www.sofascore.com/#tbls-token-refresh');
   assert.equal(a.__control.gmOpenedTabs[0].opts.active, false);
+});
+
+test('SofaScore 404 reports endpoint failure without token refresh', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 404, responseText: '{"error":{"code":404}}', responseHeaders: '' }
+    })
+  });
+  a.__resetCaches();
+
+  const result = await a.resolveSofascoreMatch(makeMatch({ sport: 'Tennis', sportKey: 'tennis' }), 'tennis');
+
+  assert.equal(result.resolution, null);
+  assert.equal(a.__control.gmOpenedTabs.length, 0);
+  assert.match(a.summarizeProviderResult('SofaScore', result), /fetch error/);
+  assert.match(a.summarizeProviderResult('SofaScore', result), /HTTP 404/);
 });
 
 test('SofaScore empty response fails gracefully and queues refresh', async () => {

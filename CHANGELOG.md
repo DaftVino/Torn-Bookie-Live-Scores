@@ -6,6 +6,11 @@
 - Added consistent loading, success, error, and disabled states for copy/details/debug buttons.
 - Added selected-game context, no-selection disabled states, and session-only copy receipts in Tools.
 - Added selected-row, details-active-row, and unmatched-row visual states with compact status/source/confidence pills.
+- Added ESPN tennis date-board parsing for the grouped tournament shape returned under `events[].groupings[].competitions[]`.
+- Changed ESPN tennis to try the date-only `tennis/all` board before falling back to verified per-tournament IDs.
+- Added a live-tennis SofaScore fallback through `/api/v1/sport/tennis/events/live`, which covers Challenger matches not present in ESPN's date board.
+- Added SofaScore tennis set-by-set score formatting from period fields, including tiebreak values when present.
+- Prevented SofaScore HTTP 404 endpoint failures from triggering token-refresh tabs; token refresh is reserved for auth/challenge failures.
 - Kept copy payload output unchanged and stored only receipt metadata, not copied text.
 - Preserved provider ordering, Settings controls, existing details behavior, and the single-file userscript model.
 

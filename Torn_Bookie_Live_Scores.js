@@ -293,7 +293,7 @@
   function isSofascoreTokenRejection(board) {
     if (!board) return true;
     const err = String(board.error || '').toLowerCase();
-    return !!err && (err.includes('403') || err.includes('request failed') || err.includes('forbidden') || err.includes('challenge'));
+    return !!err && (/\b(?:401|403)\b/.test(err) || err.includes('forbidden') || err.includes('challenge'));
   }
 
   function installSofascoreTokenCapture() {
@@ -2885,6 +2885,16 @@
     const live = isActuallyLive(match);
     const currentMs = getLiveRecoveryMs(match);
     let plan = [];
+    if (live && match?.sportKey === 'tennis') {
+      plan.push({
+        anchorKind: 'sofascore-live',
+        anchorMs: currentMs || anchorMs || Date.now(),
+        offsetDays: 0,
+        reason: 'live-board',
+        providerDate: 'live',
+        requestKey: 'live'
+      });
+    }
     if (anchorMs) plan.push(...buildOffsetPlan('torn-start', anchorMs, [0], 'primary-anchor', 'iso'));
     if (!anchorMs && live && currentMs) {
       const recovery = buildOffsetPlan('current-live', currentMs, [0], 'live-recovery', 'iso');
@@ -3097,9 +3107,16 @@
     const plan = buildSofascoreLookupPlan(match);
     return resolveProviderMatch(match, 'sofascore', plan, async step => {
       const dateStr = step.providerDate;
+      const isLiveBoard = dateStr === 'live';
+      const cacheKey = isLiveBoard
+        ? `sofascore:${slug}:live`
+        : `sofascore:${slug}:${dateStr}`;
+      const url = isLiveBoard
+        ? `https://www.sofascore.com/api/v1/sport/${slug}/events/live`
+        : `https://www.sofascore.com/api/v1/sport/${slug}/scheduled-events/${dateStr}`;
       const board = await fetchWithCache(
-        `sofascore:${slug}:${dateStr}`,
-        () => gmFetchJson(`https://www.sofascore.com/api/v1/sport/${slug}/scheduled-events/${dateStr}`, sofascoreHeaders()),
+        cacheKey,
+        () => gmFetchJson(url, sofascoreHeaders()),
         ttl,
         TTL_ERROR
       );
@@ -3212,6 +3229,68 @@
     });
   }
 
+  function espnTennisCompetitorsOf(eventOrCompetition) {
+    return eventOrCompetition?.competitors || eventOrCompetition?.competitions?.[0]?.competitors || [];
+  }
+
+  function collectEspnTennisCompetitions(board) {
+    const entries = [];
+    const addEntry = (competition, context = {}) => {
+      const competitors = espnTennisCompetitorsOf(competition);
+      if (!Array.isArray(competitors) || competitors.length < 2) return;
+      entries.push({
+        competition,
+        tournamentName: context.tournamentName || competition?.name || '',
+        groupingName: context.groupingName || ''
+      });
+    };
+
+    for (const event of Array.isArray(board?.events) ? board.events : []) {
+      // Older verified shape: each top-level event is one match.
+      addEntry(event, { tournamentName: event?.name || '' });
+
+      // Current ESPN tennis shape: top-level events are tournaments, and matches
+      // live under events[].groupings[].competitions[].
+      for (const grouping of Array.isArray(event?.groupings) ? event.groupings : []) {
+        const groupingName = grouping?.grouping?.displayName || grouping?.grouping?.name || grouping?.name || '';
+        for (const competition of Array.isArray(grouping?.competitions) ? grouping.competitions : []) {
+          addEntry(competition, { tournamentName: event?.name || '', groupingName });
+        }
+      }
+
+      // Defensive fallback for any future ESPN variant with event.competitions[]
+      // as the match list rather than a single wrapper competition.
+      for (const competition of Array.isArray(event?.competitions) ? event.competitions : []) {
+        addEntry(competition, { tournamentName: event?.name || '' });
+      }
+    }
+    return entries;
+  }
+
+  function espnTennisParserDiagnostic(board, parsedMatchCount = 0) {
+    let groupingCount = 0;
+    let groupingCompetitionCount = 0;
+    let directCompetitionCount = 0;
+    for (const event of Array.isArray(board?.events) ? board.events : []) {
+      if (Array.isArray(event?.competitions)) directCompetitionCount += event.competitions.length;
+      if (!Array.isArray(event?.groupings)) continue;
+      groupingCount += event.groupings.length;
+      for (const grouping of event.groupings) {
+        if (Array.isArray(grouping?.competitions)) groupingCompetitionCount += grouping.competitions.length;
+      }
+    }
+    return sanitizeDebugValue({
+      provider: 'espn',
+      parser: 'tennis',
+      topLevelKeys: board && typeof board === 'object' ? Object.keys(board).slice(0, 12) : [],
+      topEventCount: Array.isArray(board?.events) ? board.events.length : 0,
+      directCompetitionCount,
+      groupingCount,
+      groupingCompetitionCount,
+      parsedMatchCount
+    });
+  }
+
   async function _findEspnTennis(match) {
     const live = isActuallyLive(match);
     const plan = live
@@ -3224,41 +3303,63 @@
     const result = await resolveProviderMatch(match, 'espn', plan, async step => {
       const dateStr = step.providerDate;
       const year = dateStr.slice(0, 4);
-      // Fetch all known tournaments in parallel; each cached by (eventId, date).
-      const boards = await Promise.all(
-        TENNIS_LEAGUE_IDS.map(id =>
-          fetchWithCache(
-            `espn:tennis_all:${id}-${year}:${dateStr}`,
-            () => gmFetchJson(
-              `${ESPN_ENDPOINTS.tennis_all}?leagueId=${id}&eventId=${id}-${year}&dates=${dateStr}`
-            )
-          )
-        )
+      const dateBoard = await fetchWithCache(
+        `espn:tennis_all:all:${dateStr}`,
+        () => gmFetchJson(`${ESPN_ENDPOINTS.tennis_all}?dates=${dateStr}`)
       );
+      const dateBoardUsable = !dateBoard?.error
+        && Array.isArray(dateBoard?.events)
+        && collectEspnTennisCompetitions(dateBoard).length > 0;
+      const boards = dateBoardUsable
+        ? [dateBoard]
+        : [
+            dateBoard,
+            // Fallback for older ESPN behavior where per-tournament IDs were
+            // needed to populate the tennis/all scoreboard.
+            ...(await Promise.all(
+              TENNIS_LEAGUE_IDS.map(id =>
+                fetchWithCache(
+                  `espn:tennis_all:${id}-${year}:${dateStr}`,
+                  () => gmFetchJson(
+                    `${ESPN_ENDPOINTS.tennis_all}?leagueId=${id}&eventId=${id}-${year}&dates=${dateStr}`
+                  )
+                )
+              )
+            ))
+          ];
       const candidates = [];
       const errors = [];
       const parseFailures = [];
+      const parserDiagnostics = [];
       let eventCount = 0;
       for (const board of boards) {
         if (board?.error) { errors.push(board.error); continue; }
-        if (!Array.isArray(board?.events)) { parseFailures.push('ESPN tennis: events missing'); continue; }
-        for (const event of board.events) {
-          // Verified shape (Wimbledon 2026): competitors[] directly on event, no groupings.
-          // Defensively also accept events[].competitions[0].competitors[].
-          const competitors = event.competitors || event.competitions?.[0]?.competitors || [];
-          if (competitors.length < 2) continue;
+        if (!Array.isArray(board?.events)) {
+          parseFailures.push('ESPN tennis: events missing');
+          parserDiagnostics.push(espnTennisParserDiagnostic(board, 0));
+          continue;
+        }
+        const entries = collectEspnTennisCompetitions(board);
+        if (!entries.length && board.events.length) {
+          parseFailures.push('ESPN tennis: no match competitions parsed');
+          parserDiagnostics.push(espnTennisParserDiagnostic(board, 0));
+        }
+        for (const entry of entries) {
+          const event = entry.competition;
+          const competitors = espnTennisCompetitorsOf(event);
           const p1 = competitors[0] || {};
           const p2 = competitors[1] || {};
           eventCount++;
+          const competitionName = [entry.tournamentName, entry.groupingName].filter(Boolean).join(' ');
           candidates.push(candidateWithStep('espn', step, event, {
             providerEventId: event.id || event.uid || '',
-            startTime: event.date || '',
+            startTime: event.date || event.startDate || '',
             homeName: p1.athlete?.displayName || p1.athlete?.fullName || p1.athlete?.shortName || '',
             awayName: p2.athlete?.displayName || p2.athlete?.fullName || p2.athlete?.shortName || '',
             homeShortName: p1.athlete?.shortName || '',
             awayShortName: p2.athlete?.shortName || '',
             status: event.status?.type?.shortDetail || event.status?.type?.name || '',
-            competitionName: event.name || ''
+            competitionName: competitionName || event.name || ''
           }));
         }
       }
@@ -3266,13 +3367,14 @@
         eventCount,
         candidates,
         ...(errors.length ? { errors } : {}),
-        ...(parseFailures.length ? { parseFailures } : {})
+        ...(parseFailures.length ? { parseFailures } : {}),
+        ...(parserDiagnostics.length ? { parserDiagnostics } : {})
       };
     });
 
     return scoreFromResolution(result, 'espn', 'ESPN', (candidate, pair) => {
       const event = candidate.raw;
-      const competitors = event.competitors || event.competitions?.[0]?.competitors || [];
+      const competitors = espnTennisCompetitorsOf(event);
       const p1 = competitors[0] || {};
       const p2 = competitors[1] || {};
       const p1Score = Array.isArray(p1.linescores)
@@ -3299,6 +3401,18 @@
     if (code === 0) return 'scheduled';
     const statusDesc = status?.description || status?.type || '';
     return typeof statusDesc === 'string' ? statusDesc : String(statusDesc);
+  }
+
+  function sofascoreTennisScore(score) {
+    const parts = [];
+    for (let idx = 1; idx <= 5; idx++) {
+      const value = score?.[`period${idx}`];
+      if (value == null || value === '') continue;
+      const tieBreak = score?.[`period${idx}TieBreak`];
+      parts.push(tieBreak == null || tieBreak === '' ? String(value) : `${value}(${tieBreak})`);
+    }
+    if (parts.length) return parts.join(' ');
+    return score?.current ?? score?.display ?? '';
   }
 
   const ESPNCRICINFO_BASE = 'https://hs-consumer-api.espncricinfo.com/v1/pages';
@@ -3471,8 +3585,12 @@
     const result = await resolveSofascoreMatch(match, slug);
     return scoreFromResolution(result, 'sofascore', 'SofaScore', (candidate, pair) => {
       const ev = candidate.raw;
-      const homeScore = ev.homeScore?.current ?? ev.homeScore?.display ?? '';
-      const awayScore = ev.awayScore?.current ?? ev.awayScore?.display ?? '';
+      const homeScore = match?.sportKey === 'tennis'
+        ? sofascoreTennisScore(ev.homeScore)
+        : (ev.homeScore?.current ?? ev.homeScore?.display ?? '');
+      const awayScore = match?.sportKey === 'tennis'
+        ? sofascoreTennisScore(ev.awayScore)
+        : (ev.awayScore?.current ?? ev.awayScore?.display ?? '');
       const statusDesc = sofascoreStatusDetail(ev.status);
       return {
         team1Score: pair.team1IsHome ? homeScore : awayScore,
@@ -7538,7 +7656,7 @@
   top: ${PANEL_TOP}px;
   right: ${EDGE_GAP}px;
   width: ${PANEL_WIDTH}px;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 150px);
   z-index: 999999;
   display: flex;
   flex-direction: column;

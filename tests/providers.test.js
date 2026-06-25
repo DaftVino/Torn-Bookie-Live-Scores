@@ -254,6 +254,37 @@ function makeTennisAllBoardWta(overrides = {}) {
   };
 }
 
+function makeGroupedTennisBoard(overrides = {}) {
+  return {
+    events: [{
+      id: 'mallorca-2026',
+      name: 'Vanda Pharmaceuticals Mallorca Championships',
+      date: '2026-06-20T04:00Z',
+      groupings: [{
+        grouping: { displayName: "Men's Singles" },
+        competitions: [{
+          id: '177270',
+          date: '2026-06-25T11:35Z',
+          status: { type: { shortDetail: '1st', name: 'STATUS_IN_PROGRESS' } },
+          competitors: [
+            {
+              homeAway: 'away',
+              athlete: { displayName: 'Nuno Borges', fullName: 'Nuno Borges', shortName: 'N. Borges' },
+              linescores: [{ value: 5 }]
+            },
+            {
+              homeAway: 'home',
+              athlete: { displayName: 'Luciano Darderi', fullName: 'Luciano Darderi', shortName: 'L. Darderi' },
+              linescores: [{ value: 5 }]
+            }
+          ]
+        }]
+      }]
+    }],
+    ...overrides
+  };
+}
+
 // C3-FIX: URL contract — leagueId + eventId in query params
 test('_findEspnTennis: URL uses /tennis/all/scoreboard with leagueId and eventId', async () => {
   const b = loadUserscript({
@@ -342,6 +373,96 @@ test('_findEspnTennis: finds match in a second tournament when first returns emp
 });
 
 // C3-FIX: Caching — N requests on first call, 0 new requests on second call
+test('_findEspnTennis: extracts matches from current grouped tournament shape', async () => {
+  const b = loadUserscript({
+    gmXmlhttpRequest: (req) => {
+      const body = req.url.includes('leagueId=637') ? makeGroupedTennisBoard() : { events: [] };
+      return { type: 'load', response: { status: 200, responseText: JSON.stringify(body), responseHeaders: '' } };
+    }
+  });
+  b.__resetCaches();
+  const match = {
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    team1: 'Luciano Darderi',
+    team2: 'Nuno Borges',
+    competition: 'Mallorca Championships 2026(ATP)',
+    startTimestamp: String(Date.UTC(2026, 5, 25, 11, 35, 0)),
+    status: '1st Set',
+    rawStatus: 'inprogress',
+    sectionType: 'live',
+    sourceKey: 'espn'
+  };
+  const result = await b._findEspnTennis(match);
+  assert.equal(result.found, true, `expected found; detail: ${result.detail}`);
+  assert.equal(result.team1Score, '5');
+  assert.equal(result.team2Score, '5');
+  assert.equal(result.detail, '1st');
+});
+
+test('_findEspnTennis: date-only grouped board resolves without per-tournament fan-out', async () => {
+  const b = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: { status: 200, responseText: JSON.stringify(makeGroupedTennisBoard()), responseHeaders: '' }
+    })
+  });
+  b.__resetCaches();
+  const match = {
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    team1: 'Luciano Darderi',
+    team2: 'Nuno Borges',
+    competition: 'Mallorca Championships 2026(ATP)',
+    startTimestamp: String(Date.UTC(2026, 5, 25, 11, 35, 0)),
+    status: '1st Set',
+    rawStatus: 'inprogress',
+    sectionType: 'live',
+    sourceKey: 'espn'
+  };
+  const result = await b._findEspnTennis(match);
+  assert.equal(result.found, true, `expected found; detail: ${result.detail}`);
+  assert.equal(b.__control.gmRequests.length, 1);
+  assert.ok(!b.__control.gmRequests[0].url.includes('leagueId='), b.__control.gmRequests[0].url);
+});
+
+test('_findEspnTennis: records diagnostics when 200 response has tournament containers but no match competitions', async () => {
+  const b = loadUserscript({
+    gmXmlhttpRequest: () => ({
+      type: 'load',
+      response: {
+        status: 200,
+        responseText: JSON.stringify({
+          events: [{
+            id: 'container-only',
+            name: 'Container Open',
+            groupings: [{ grouping: { displayName: "Men's Singles" }, competitions: [{ id: 'bad', competitors: [] }] }]
+          }]
+        }),
+        responseHeaders: ''
+      }
+    })
+  });
+  b.__resetCaches();
+  const match = {
+    sport: 'Tennis',
+    sportKey: 'tennis',
+    team1: 'Djokovic',
+    team2: 'Alcaraz',
+    startTimestamp: String(Date.UTC(2026, 5, 25, 14, 0, 0)),
+    status: '1st Set',
+    rawStatus: 'inprogress',
+    sectionType: 'live',
+    sourceKey: 'espn'
+  };
+  const result = await b._findEspnTennis(match);
+  assert.equal(result.found, false);
+  assert.match(result.detail, /parser failed|no events/);
+  assert.ok(result.parserDiagnostics.length > 0, 'expected parser diagnostics for unparsed tournament container');
+  assert.equal(result.parserDiagnostics[0].groupingCompetitionCount, 1);
+  assert.equal(result.parserDiagnostics[0].parsedMatchCount, 0);
+});
+
 test('_findEspnTennis: caches per (leagueId-year, date) — no duplicate requests on second call', async () => {
   const b = loadUserscript({
     gmXmlhttpRequest: (req) => {
@@ -360,8 +481,8 @@ test('_findEspnTennis: caches per (leagueId-year, date) — no duplicate request
   await b._findEspnTennis(match);
   // Second call: all tournaments already cached, no new network requests
   assert.equal(b.__control.gmRequests.length, afterFirst, 'second call should make 0 new requests (all cached)');
-  // First call should have queried all 5 seeded league IDs
-  assert.equal(afterFirst, 5, `expected 5 requests (one per league ID), got ${afterFirst}`);
+  // First call should have queried the date-only board plus all 5 seeded league IDs.
+  assert.equal(afterFirst, 6, `expected 6 requests (date-only plus one per league ID), got ${afterFirst}`);
 });
 
 // C3-FIX: Negative — empty events array records no candidates, does not throw

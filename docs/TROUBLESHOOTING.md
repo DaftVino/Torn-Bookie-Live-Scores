@@ -1,7 +1,7 @@
 # Troubleshooting
 
-Last reviewed: 2026-06-24
-Userscript version reviewed: `2.5.7`
+Last reviewed: 2026-06-25
+Userscript version reviewed: `2.5.8`
 
 ## First Checks
 
@@ -58,6 +58,14 @@ Possible causes:
 
 Enable debug mode and inspect `providersTried`, `providerErrors`, and the `network` section of the debug report.
 
+For live tennis specifically, a healthy report should usually show one successful `www.sofascore.com` request to:
+
+```text
+/api/v1/sport/tennis/events/live
+```
+
+Multiple live tennis rows should coalesce onto the same cache key, `sofascore:tennis:live`. If live tennis falls back to ESPN only, check whether SofaScore returned 401/403/token errors, not just a 404 from the date schedule path.
+
 ### API-Sports or API-Football does not fetch
 
 API-Sports is BYOK and manual-only by default.
@@ -84,6 +92,8 @@ If it still fails:
 - copy a debug report if failures continue.
 
 The debug report includes SofaScore token age and whether a refresh was queued. It does not include the token value.
+
+Do not treat a SofaScore HTTP 404 as a token problem. For tennis, the date schedule path can return 404 while the live tennis endpoint works. A token refresh is expected only for 401/403, forbidden, or challenge-like responses.
 
 ### BBC Sport parser failed
 
@@ -163,6 +173,7 @@ Manual smoke test on Torn Bookie:
 
 - panel renders after `YOUR BETS` loads,
 - live ESPN-covered match resolves,
+- live tennis resolves through SofaScore's `/sport/tennis/events/live` path and coalesces repeated tennis rows,
 - SofaScore-backed match either resolves or queues token refresh cleanly,
 - API-Sports manual-only spends quota only after `Refresh now`,
 - debug report has network host status and no secrets,

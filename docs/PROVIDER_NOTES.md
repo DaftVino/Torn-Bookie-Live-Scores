@@ -1,7 +1,7 @@
 # Provider Notes
 
-Last reviewed: 2026-06-24
-Userscript version reviewed: `2.5.7`
+Last reviewed: 2026-06-25
+Userscript version reviewed: `2.5.8`
 
 These notes preserve the current provider contracts and the still-useful findings from the local research docs. Prefer updating this file when endpoint or parser behavior changes, rather than keeping raw HARs or dated audit plans in the public repo.
 
@@ -24,6 +24,7 @@ Do not read that as "PandaScore is first for every sport." The effective ladder 
 Representative effective ladders with an API-Sports key configured:
 
 ```text
+Live tennis: SofaScore live board -> ESPN tennis date board
 World Cup / mapped ESPN soccer: ESPN -> SofaScore -> API-Football
 Unmapped soccer: SofaScore -> API-Football
 Rugby union: SofaScore -> API-Sports -> LiveScore
@@ -58,7 +59,23 @@ Current verified mappings include MLB, FIFA World/Club World Cup, selected socce
 
 Do not use `sports/tennis/{league}/scoreboard`; those variants returned 404 during the 2026-06-22 research pass.
 
-Use the verified per-tournament endpoint:
+The current ESPN tennis implementation must try the date-only `tennis/all` board first:
+
+```text
+https://site.api.espn.com/apis/site/v2/sports/tennis/all/scoreboard?dates=YYYYMMDD
+```
+
+As of the 2026-06-25 debug cycle, this date-only board returns tournament containers, not direct match rows. The parser must preserve all of these shapes:
+
+```text
+events[].groupings[].competitions[].competitors[].athlete.*
+events[].competitions[].competitors[].athlete.*
+events[].competitors[].athlete.*
+```
+
+The grouped shape covered Wimbledon qualifying, Eastbourne, Mallorca, and Bad Homburg in the 2026-06-25 reports. It did not cover Challenger tournaments such as Plovdiv and Targu Mures.
+
+Keep the verified per-tournament endpoint only as a fallback when the date-only board is missing, errored, or has no parseable match competitions:
 
 ```text
 https://site.api.espn.com/apis/site/v2/sports/tennis/all/scoreboard?leagueId={leagueId}&eventId={leagueId}-{year}&dates=YYYYMMDD
@@ -75,6 +92,8 @@ Current static tournament IDs:
 ```
 
 Tennis events are not standard team boards. Names are under `events[].competitors[].athlete.*`, and set scores are under `competitors[].linescores[].value`.
+
+Do not make ESPN the first effective live-tennis provider unless Challenger coverage is re-verified. Live tennis intentionally tries SofaScore before ESPN because SofaScore's live board covered both ATP/WTA/Grand Slam rows and Challenger rows in the 2026-06-25 debug report.
 
 ### Rugby League And AFL
 
@@ -126,15 +145,25 @@ Cricket scores can be multi-innings strings such as `158`, `162/2`, `17.4/20 ov`
 
 ## SofaScore
 
-Current host:
+Current date-board host:
 
 ```text
 https://www.sofascore.com/api/v1/sport/{slug}/scheduled-events/{YYYY-MM-DD}
 ```
 
+Important tennis exception:
+
+```text
+https://www.sofascore.com/api/v1/sport/tennis/events/live
+```
+
+Live tennis must use the live board before the date-board plan. The date-board tennis endpoint returned HTTP 404 in the 2026-06-25 reports, while the live board returned HTTP 200 and resolved all 10 live tennis rows, including Plovdiv and Targu Mures Challenger matches. Non-live/upcoming tennis still uses the date-board plan.
+
 SofaScore is still wired in the current code. It is a free provider, but it is token-sensitive: requests require an `x-requested-with` token. The script stores the latest captured token, uses it in score/H2H requests, and can refresh it through a background SofaScore tab after a token rejection.
 
 Prior 403 failures were not treated as a reason to remove SofaScore. The current implementation uses the `www.sofascore.com` API host, sends browser-origin headers plus `x-requested-with`, and queues token refresh when a 403 or empty board suggests token rejection.
+
+Do not treat HTTP 404 from a SofaScore endpoint as token rejection. It is an endpoint/path failure and must not queue the token refresh tab. Token refresh is reserved for 401/403, forbidden, or challenge-like failures.
 
 Known response shape:
 
@@ -148,6 +177,15 @@ event.homeScore / event.awayScore
 ```
 
 For tennis, per-set scores are in `period1`, `period2`, and similar fields; `current` indicates sets won.
+
+For tennis display, prefer set-by-set period fields (`period1` through `period5`) and include tiebreak fields when present (`period1TieBreak`, etc.). Fall back to `current` or `display` only when period values are absent.
+
+Regression guardrails:
+
+- keep `SofaScore live tennis uses events/live before the date schedule endpoint`,
+- keep `SofaScore non-live tennis keeps the date schedule endpoint`,
+- keep `SofaScore 404 reports endpoint failure without token refresh`,
+- keep ESPN tennis grouped/date-only parser tests.
 
 ## API-Sports And API-Football
 

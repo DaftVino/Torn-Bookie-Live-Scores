@@ -1,8 +1,8 @@
 # Torn Bookie Live Scores Architecture
 
-Last reviewed: 2026-06-24
+Last reviewed: 2026-06-25
 Production source: `Torn_Bookie_Live_Scores.js`
-Userscript version reviewed: `2.5.7`
+Userscript version reviewed: `2.5.8`
 
 ## Purpose
 
@@ -51,6 +51,7 @@ That array is not the effective order for every match. `getProviderPriority()` f
 Representative effective ladders with an API-Sports key configured:
 
 ```text
+Live tennis: SofaScore live board -> ESPN tennis date board
 World Cup / mapped ESPN soccer: ESPN -> SofaScore -> API-Football
 Unmapped soccer: SofaScore -> API-Football
 Rugby union: SofaScore -> API-Sports -> LiveScore
@@ -60,6 +61,8 @@ Mapped esports: PandaScore, only when enabled and token-configured
 ```
 
 SofaScore is still active in the current code. It uses `www.sofascore.com/api/v1/...` with a stored `x-requested-with` token and a token-refresh path. It should be treated as token-sensitive and recoverable, not removed or assumed permanently failed. ESPN is preferred where an endpoint is verified. API-Football/API-Sports are BYOK and intentionally late in the ladder to conserve quota.
+
+Tennis is deliberately special-cased. Live tennis tries SofaScore's live board before ESPN because the ESPN date board does not cover all Challenger tournaments. ESPN remains the no-key fallback for covered ATP/WTA/Grand Slam rows and must keep its grouped date-board parser. Do not collapse tennis back to generic ESPN-primary routing without fresh debug evidence and regression tests.
 
 ## Matching And Date Planning
 
@@ -115,6 +118,8 @@ https://www.sofascore.com/#tbls-token-refresh
 ```
 
 On SofaScore pages, the script captures `x-requested-with` from XHR/fetch calls for `/api/v1/` requests, stores the fresh token, and closes the refresh tab only after this page session captures a token. Existing old token timestamps alone do not close the tab.
+
+HTTP 404 from a SofaScore path is not a token rejection and must not open the token-refresh tab. The tennis date schedule path has returned 404 while the live tennis path succeeded, so 404s are treated as endpoint coverage/path failures.
 
 ## Details And Enrichment
 

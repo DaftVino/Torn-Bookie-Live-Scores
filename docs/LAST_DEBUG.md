@@ -500,3 +500,241 @@ Verified:
 Summary:
 
 - Step 9 is complete. Tennis matching now covers the observed provider name variants: accented trailing surnames, family-name-first ordering, and collapsed hyphen/given-name spacing, while keeping non-tennis team matching strict.
+
+### Step 10 - Tennis Provider Endpoint/Parser Follow-Up
+
+Latest source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\222493b8-2195-4c3d-8d31-9b2facada0a9\pasted-text.txt`
+
+Generated at: `2026-06-25T11:56:53.807Z`
+
+Baseline verification before changes:
+
+- `npm.cmd run test:syntax` from `tests` passed.
+- `npm.cmd test` from `tests` passed: `260/260`.
+
+Important confirmation from the new capture:
+
+- The panel now has 15 rows: 7 live tennis, 5 upcoming tennis, 1 upcoming football, 1 upcoming League of Legends, and 1 upcoming baseball.
+- All 7 live tennis rows are unmatched with the same provider detail:
+  `SofaScore: fetch error for 2026-06-25, 2026-06-24, 2026-06-26 [HTTP 404] | ESPN: no events for 20260625, 20260624, 20260626`.
+- Affected live tennis competitions include:
+  - `Mallorca Championships 2026(ATP)`
+  - `Plovdiv 2026(Challenger)`
+  - `Bad Homburg Open 2026(WTA)`
+  - `Lexus Eastbourne Open 2026(WTA)`
+  - `Lexus Eastbourne Open 2026(ATP)`
+  - `Wimbledon, Qualification ATP 2026(Grand Slam)`
+- SofaScore made 3 network requests and all returned HTTP `404` from:
+  `/api/v1/sport/tennis/scheduled-events/YYYY-MM-DD`
+- ESPN made 15 tennis scoreboard requests and all returned HTTP `200`; each recent response was about `1.43 MB`.
+- ESPN requests are being coalesced correctly by cache key, so the request fan-out is not the immediate issue.
+- No resolved events were recorded for the tennis rows in this capture.
+- There is no active details match in this capture, so the failure is visible directly in the live-row score path rather than only details enrichment.
+
+New finding:
+
+- This is no longer a tennis name-matching problem. Step 8 and Step 9 addressed the observed provider-name variants, but this capture fails before any SofaScore candidates can be scored.
+- The SofaScore tennis scheduled-events endpoint appears broken or no longer valid for tennis on these dates. Because the response is HTTP `404`, this is not a token-refresh problem.
+- ESPN is reachable and returning large successful JSON bodies, but `_findEspnTennis()` still reports `no events`. That points to one of two likely issues:
+  1. the current hard-coded `TENNIS_LEAGUE_IDS` list does not include the relevant current tournament/event IDs, or
+  2. ESPN is returning useful data in a shape other than the currently parsed `board.events` container.
+- The current ESPN tennis path remains too brittle because it only probes five tournament IDs: Wimbledon, Eastbourne, Mallorca, Bad Homburg, and Berlin. Plovdiv and Targu Mures challenger rows are still outside verified ESPN coverage.
+
+Repair direction:
+
+1. Re-probe SofaScore tennis endpoints and identify the current public tennis schedule path, if one still exists. Do not route HTTP `404` through the token-refresh flow.
+2. Add a tennis-specific SofaScore endpoint fallback only after the replacement path is verified with a real response body.
+3. Capture a sanitized ESPN tennis response shape for `2026-06-25` and inspect top-level containers, because the current `board.events` parser may be missing events in a changed shape.
+4. Add ESPN tennis parser diagnostics when a `200 OK` response has no parsed events, including sanitized top-level keys and candidate container counts without raw provider responses.
+5. Re-check ESPN tennis IDs for the observed competitions, especially:
+   - Plovdiv Challenger
+   - Targu Mures Challenger
+   - Wimbledon qualifying ATP
+   - Eastbourne ATP/WTA
+   - Mallorca ATP
+   - Bad Homburg WTA
+6. Update `TENNIS_LEAGUE_IDS` only with verified IDs that return useful events through the current ESPN endpoint contract.
+7. If ESPN's date-only tennis board contains all events without per-tournament filtering, prefer that simpler query path or add it as a fallback after the current per-ID requests miss.
+8. Keep request coalescing and cache behavior intact; the capture shows that part is working.
+9. Keep tennis name-normalization changes from Steps 8 and 9 unchanged unless new candidate diagnostics prove another matching issue after endpoint/parser repair.
+
+Regression tests to add:
+
+1. SofaScore tennis HTTP `404` should summarize as endpoint fetch failure and should not queue token refresh.
+2. `_findEspnTennis()` should parse the newly captured ESPN tennis response shape when events are not under top-level `events`.
+3. `_findEspnTennis()` should report parser diagnostics for `200 OK` responses with no parsed events.
+4. ESPN tennis should resolve fixture coverage for at least one observed ATP/WTA row from this capture, for example `Naomi Osaka v Ekaterina Alexandrova` or `Luciano Darderi v Nuno Borges`, using a saved fixture.
+5. ESPN tennis should preserve graceful failure for uncovered challenger rows until a verified ID or fallback path is added.
+
+Follow-up source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\e9355352-57c1-404e-b1d8-08c5332b52a1\pasted-text.txt`
+
+Generated at: `2026-06-25T12:13:16.946Z`
+
+Additional confirmation from the follow-up capture:
+
+- The panel has 14 rows: 7 live tennis, 4 upcoming tennis, 1 upcoming football, 1 upcoming League of Legends, and 1 upcoming baseball.
+- The same 7 live tennis rows are unmatched with the same combined detail:
+  `SofaScore: fetch error for 2026-06-25, 2026-06-24, 2026-06-26 [HTTP 404] | ESPN: no events for 20260625, 20260624, 20260626`.
+- SofaScore shows `errCount: 6` and no successful tennis board requests.
+- ESPN shows `okCount: 15`, and the provider cache has successful tennis entries for all 5 seeded IDs across the 3-date live lookup window.
+- ESPN cache hits in this capture confirm the problem is not request coalescing or cache leakage; the cached JSON was being parsed incorrectly.
+
+Live endpoint probe results:
+
+- ESPN date-only tennis board for `20260625` returned HTTP `200`, about `1.43 MB`, with top-level keys `leagues`, `events`, and `provider`.
+- The top-level ESPN `events` are tournament containers, not match events:
+  - `Lexus Eastbourne Open`
+  - `Bad Homburg Open powered by Solarwatt`
+  - `Vanda Pharmaceuticals Mallorca Championships`
+  - `Wimbledon`
+- The actual match rows are under `events[].groupings[].competitions[]`.
+- The date-only ESPN board contained current rows matching observed Torn games, including:
+  - `Nuno Borges v Luciano Darderi`
+  - `Madison Keys v McCartney Kessler`
+  - `Zizou Bergs v Jan Choinski`
+  - `Dusan Lajovic v Vilius Gaubas`
+  - `Kyrian Jacquet v Timofey Skatov`
+  - `Rei Sakamoto v Jaime Faria`
+  - `Ekaterina Alexandrova v Naomi Osaka`
+- ESPN per-ID URLs returned the same useful tournament-container shape, so the date-only board is enough for covered ATP/WTA/Grand Slam rows and avoids duplicated large requests.
+- A direct non-browser SofaScore probe returned HTTP `403`, while the in-browser debug reports HTTP `404`. Either way, this is not a reason to refresh the token unless the status is auth/challenge-like.
+
+Completed:
+
+- Added ESPN tennis parsing for the current grouped tournament shape: `events[].groupings[].competitions[]`.
+- Preserved the older flat ESPN tennis shape where top-level `events[]` are direct match events.
+- Changed `_findEspnTennis()` to try the ESPN date-only board first and only fall back to per-tournament `leagueId/eventId` requests when the date-only board is unavailable or has no parseable match competitions.
+- Added sanitized ESPN tennis parser diagnostics for `200 OK` responses that have tournament containers but no parsed match competitions.
+- Narrowed SofaScore token-rejection detection so HTTP `404` endpoint failures do not queue a background token-refresh tab.
+- Left `TENNIS_LEAGUE_IDS` unchanged because the date-only ESPN board now covers the observed Eastbourne, Bad Homburg, Mallorca, and Wimbledon qualifying rows. Plovdiv/Targu Mures Challenger rows remain outside verified ESPN coverage until a provider source or ID is found.
+
+Regression tests added:
+
+- `_findEspnTennis: extracts matches from current grouped tournament shape`
+- `_findEspnTennis: date-only grouped board resolves without per-tournament fan-out`
+- `_findEspnTennis: records diagnostics when 200 response has tournament containers but no match competitions`
+- `SofaScore 404 reports endpoint failure without token refresh`
+
+Verified:
+
+- `node --check ..\Torn_Bookie_Live_Scores.js` passed from `tests`.
+- `node --test providers.test.js sofascore.test.js` passed: `38/38`.
+- `npm.cmd run test:syntax` from `tests` passed.
+- `npm.cmd test` from `tests` passed: `264/264`.
+
+Summary:
+
+- Step 10 is complete for the ESPN-covered rows. The next debug report should show ESPN resolving the covered live tennis rows from Eastbourne, Bad Homburg, Mallorca, and Wimbledon qualifying even when SofaScore tennis schedule requests fail. Challenger rows such as Plovdiv and Targu Mures may still need a separate verified provider path or tournament ID.
+
+### Step 11 - Live Tennis Challenger Fallback
+
+Latest source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\6c9b0394-07f3-4e20-96d6-fae092bf82b3\pasted-text.txt`
+
+Generated at: `2026-06-25T12:37:43.935Z`
+
+New debug confirmation:
+
+- Step 10 resolved the ESPN-covered live tennis rows:
+  - Mallorca ATP
+  - Eastbourne ATP/WTA
+  - Bad Homburg WTA
+  - Wimbledon qualifying ATP
+- Only two live tennis rows remained unmatched:
+  - `Sandro Kopp v Dali Blanch` from `Plovdiv 2026(Challenger)`
+  - `Andrej Nedic v Max Alcala Gurri` from `Targu Mures 2026(Challenger)`
+- ESPN date-only tennis boards were healthy (`HTTP 200`) but did not include these Challenger tournaments.
+- SofaScore date schedule requests still returned `HTTP 404` for tennis:
+  `/api/v1/sport/tennis/scheduled-events/YYYY-MM-DD`
+- Browser-side probing showed SofaScore's live tennis endpoint returns live tennis events, including Challenger tournament coverage:
+  `/api/v1/sport/tennis/events/live`
+- Plain PowerShell requests to SofaScore returned `HTTP 403`, matching SofaScore's browser/WAF behavior and confirming that tests should use the existing userscript GM header path rather than direct shell probes.
+
+Completed:
+
+- Added a tennis-only live SofaScore lookup step before the date schedule plan:
+  `/api/v1/sport/tennis/events/live`
+- Kept non-live tennis on the existing date schedule endpoint, so upcoming/date behavior is unchanged.
+- Kept ESPN tennis behavior unchanged; the new fallback only affects the SofaScore provider path for live tennis rows.
+- Added SofaScore tennis score formatting from `period1` through `period5`, including tiebreak values when present, so Challenger fallback rows show set-by-set scores instead of only set counts.
+
+Regression tests added:
+
+- `SofaScore live tennis uses events/live before the date schedule endpoint`
+- `SofaScore non-live tennis keeps the date schedule endpoint`
+
+Verified:
+
+- `npm.cmd run test:syntax` from `tests` passed.
+- `node --test sofascore.test.js providers.test.js` from `tests` passed: `40/40`.
+- `node --test matching.test.js` from `tests` passed: `27/27`.
+- `npm.cmd test` from `tests` passed: `266/266`.
+
+Summary:
+
+- Step 11 completes the remaining live tennis Challenger fallback without touching the working ESPN date-board parser. The two rows that were missing only because ESPN lacked Challenger coverage should now try SofaScore's live tennis feed first and render set-by-set scores when SofaScore has the event.
+
+### Step 12 - Post-Fix Debug Confirmation And Guardrails
+
+Latest source attachment:
+
+`C:\Users\jm3ak\.codex\attachments\ee86b752-a4f0-4d6d-b389-d3357ed18114\pasted-text.txt`
+
+Generated at: `2026-06-25T12:49:38.772Z`
+
+Confirmation:
+
+- The live tennis fix is active and working.
+- Panel state showed `liveCount: 10` and `upcomingCount: 4`.
+- All 10 live tennis rows resolved from SofaScore.
+- The previous problem rows resolved:
+  - `Sandro Kopp v Dali Blanch` via SofaScore, score `6 3` to `3 1`, detail `2nd set`.
+  - `Andrej Nedic v Max Alcala Gurri` via SofaScore, score `0` to `0`, detail `1st set`.
+- The remaining `score.found: false` rows were all upcoming/not-started rows, not live score failures:
+  - `Hugo Gaston v Moez Echargui`
+  - `Grobina v Auda`
+  - `T1 v Team Liquid`
+  - `Atlanta Braves v San Francisco Giants`
+
+Network/cache evidence:
+
+- Only one actual provider request was made for the live tennis score refresh:
+  `/api/v1/sport/tennis/events/live`
+- `www.sofascore.com` returned `HTTP 200`.
+- Response size was about `402493` bytes.
+- Nine concurrent live tennis lookups coalesced onto the same in-flight request.
+- Provider cache contained only `sofascore:tennis:live` for this refresh, with `hasError: false`.
+- No ESPN tennis request was needed for these live rows because the SofaScore live board resolved first.
+
+Durable framework decision:
+
+- Live tennis intentionally starts with SofaScore, not ESPN.
+- Reason: SofaScore's live tennis board covers Challenger rows that ESPN's tennis date board did not cover in the 2026-06-25 reports.
+- ESPN remains a fallback for covered ATP/WTA/Grand Slam rows and for cases where SofaScore is token-blocked or misses.
+- Non-live/upcoming tennis keeps the date-based plan. Do not use the live board for upcoming rows.
+- Do not treat SofaScore HTTP `404` as token rejection. `404` means endpoint/path/coverage failure. Token refresh should be reserved for `401`, `403`, `forbidden`, or challenge-like responses.
+- Do not remove the ESPN tennis grouped-date parser. It is still required for ESPN-covered rows and for fallback when SofaScore does not resolve.
+- Do not re-enable LiveScore/TheScore/BBC tennis without fresh probes and parser tests; those endpoints repeatedly returned 404 in the prior reports.
+- Keep these tests as regression blockers:
+  - `SofaScore live tennis uses events/live before the date schedule endpoint`
+  - `SofaScore non-live tennis keeps the date schedule endpoint`
+  - `SofaScore 404 reports endpoint failure without token refresh`
+  - `_findEspnTennis: extracts matches from current grouped tournament shape`
+  - `_findEspnTennis: date-only grouped board resolves without per-tournament fan-out`
+  - `_findEspnTennis: records diagnostics when 200 response has tournament containers but no match competitions`
+
+Documentation updated:
+
+- `docs/PROVIDER_NOTES.md` now documents the live-tennis SofaScore endpoint, ESPN tennis fallback/parser shape, 404/token-refresh distinction, and regression guardrails.
+- `docs/ARCHITECTURE.md` now documents the effective live-tennis provider ladder and warns not to collapse tennis back to generic ESPN-primary routing.
+- `docs/TROUBLESHOOTING.md` now documents the expected healthy live-tennis debug signals and the 404/token distinction.
+- `CHANGELOG.md` now includes the v2.5.8 tennis provider/parser fixes.
+
+Remaining note:
+
+- The debug report still reports script version `2.5.7` even though the active source metadata is `2.5.8`. The runtime behavior proves the fix is installed, but the installed userscript metadata should be refreshed/bumped before release so future debug reports align with the source version.
