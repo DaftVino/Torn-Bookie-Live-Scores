@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
 // @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
-// @version      2.5.7
+// @version      2.5.8
 // @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, ESPNcricinfo, API-Football/API-Sports (BYOK), SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
 // @author       DaftVino
 // @license      MIT
@@ -73,7 +73,7 @@
   const DETAILS_ID  = 'tm-bookie-details-popout';
   const DEBUG_REPORT_NOTICE_ID = 'tm-bookie-debug-report-notice';
   const SETTINGS_KEY = 'tmBookieScoresUiSettings';
-  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.5.7';
+  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.5.8';
   const SCRIPT_NAMESPACE = 'https://greasyfork.org/users/daftvino';
 
   const PANEL_WIDTH   = 360;  // must match #PANEL_ID width in CSS
@@ -744,6 +744,9 @@
 
   let activeDetailsMatchKey  = null;
   let activeDetailsFallbackMatch = null;
+  let lastCopyReceipt = null;
+  let lastCopyToolsSelectionSignature = '';
+  let copyToolsSelectionWatcherBound = false;
   let latestRenderableMatches = [];
   let detailsResizeListenerBound = false;
   let detailsResizeTimer = null;
@@ -5208,19 +5211,125 @@
     });
   }
 
-  function toast(msg, isError) {
+  function getActionNoticeIcon(type) {
+    if (type === 'success') return '✓';
+    if (type === 'warning') return '!';
+    if (type === 'error') return '!';
+    if (type === 'loading') return '';
+    return 'i';
+  }
+
+  function showActionNotice({ type = 'info', title = '', detail = '', timeoutMs } = {}) {
+    const normalizedType = ['success', 'info', 'warning', 'error', 'loading'].includes(type) ? type : 'info';
+    const isAssertive = normalizedType === 'warning' || normalizedType === 'error';
+    const noticeTimeout = Number.isFinite(timeoutMs)
+      ? timeoutMs
+      : (isAssertive ? 3500 : 2200);
     document.getElementById(TOAST_ID)?.remove();
-    const t = document.createElement('div');
-    t.id = TOAST_ID;
-    t.textContent = msg;
-    Object.assign(t.style, {
-      position: 'fixed', bottom: '24px', right: '20px', zIndex: '1000000',
-      padding: '8px 14px', background: isError ? '#a33' : '#2a6b3a',
-      color: '#fff', borderRadius: '4px', fontSize: '12px',
-      fontFamily: 'Arial, sans-serif', boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
-    });
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2500);
+
+    const notice = document.createElement('div');
+    notice.id = TOAST_ID;
+    notice.className = [
+      'tm-bookie-action-notice',
+      `tm-notice-${normalizedType}`,
+      `tm-layout-${uiSettings.layoutSide === 'left' ? 'left' : 'right'}`,
+      `tm-theme-${uiSettings.theme || 'default'}`
+    ].join(' ');
+    notice.setAttribute('role', isAssertive ? 'alert' : 'status');
+    notice.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
+
+    const icon = document.createElement('div');
+    icon.className = 'tm-bookie-notice-icon';
+    icon.textContent = getActionNoticeIcon(normalizedType);
+
+    const copy = document.createElement('div');
+    copy.className = 'tm-bookie-notice-copy';
+
+    const titleNode = document.createElement('div');
+    titleNode.className = 'tm-bookie-notice-title';
+    titleNode.textContent = title || (isAssertive ? 'Action failed' : 'Action complete');
+
+    const detailNode = document.createElement('div');
+    detailNode.className = 'tm-bookie-notice-detail';
+    detailNode.textContent = detail || '';
+    if (detail) detailNode.title = detail;
+
+    copy.appendChild(titleNode);
+    if (detail) copy.appendChild(detailNode);
+    notice.appendChild(icon);
+    notice.appendChild(copy);
+
+    const progress = document.createElement('div');
+    progress.className = 'tm-bookie-notice-progress';
+    notice.appendChild(progress);
+
+    document.body.appendChild(notice);
+    if (normalizedType !== 'loading' && noticeTimeout > 0) {
+      setTimeout(() => {
+        if (notice.isConnected) notice.remove();
+      }, noticeTimeout);
+    }
+    return notice;
+  }
+
+  function parseLegacyToastMessage(msg, isError) {
+    const text = String(msg || '');
+    const copiedMatch = text.match(/^Copied(?: compact| enriched)?:\s*(.+)$/i);
+    if (copiedMatch) {
+      const isCompact = /compact|enriched/i.test(text);
+      return {
+        type: 'success',
+        title: isCompact ? 'Copied compact text' : 'Copied full game',
+        detail: copiedMatch[1]
+      };
+    }
+    if (/External analysis unavailable/i.test(text)) {
+      return {
+        type: 'warning',
+        title: 'Copied compact text',
+        detail: 'External analysis unavailable, original game copied'
+      };
+    }
+    if (/Copy failed|Could not copy/i.test(text)) {
+      return {
+        type: 'error',
+        title: 'Copy failed',
+        detail: /console/i.test(text) ? 'Clipboard blocked. Output was written to the console.' : text
+      };
+    }
+    return {
+      type: isError ? 'error' : 'success',
+      title: text,
+      detail: ''
+    };
+  }
+
+  function toast(msg, isError) {
+    showActionNotice(parseLegacyToastMessage(msg, isError));
+  }
+
+  function setButtonActionState(button, state, label, options = {}) {
+    if (!button) return;
+    if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent || '';
+    button.classList.remove('is-loading', 'is-success', 'is-error', 'is-disabled');
+    if (state && state !== 'idle') button.classList.add(`is-${state}`);
+    if (label) button.textContent = label;
+    const shouldDisable = state === 'loading' || state === 'disabled' || options.disabled === true;
+    button.disabled = shouldDisable;
+    button.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+  }
+
+  function restoreButtonActionState(button, delayMs = 1600) {
+    if (!button) return;
+    const restore = () => {
+      if (!button.isConnected) return;
+      button.classList.remove('is-loading', 'is-success', 'is-error', 'is-disabled');
+      button.disabled = false;
+      button.setAttribute('aria-busy', 'false');
+      button.textContent = button.dataset.originalLabel || button.textContent;
+    };
+    if (delayMs > 0) setTimeout(restore, delayMs);
+    else restore();
   }
 
   // -- Scoreboard renderers ------------------------------------------------------
@@ -5285,23 +5394,77 @@
 
   // -- Match row renderers -------------------------------------------------------
 
-  function renderLiveMatch(match) {
+  function getConfidenceLabel(match) {
+    const confidence = Number(match?.score?.confidence || 0);
+    if (!confidence) return '';
+    if (confidence >= 95) return 'exact';
+    if (confidence >= CONFIDENCE_THRESHOLD) return 'likely';
+    return '';
+  }
+
+  function getMatchRowState(match, selectedSummary = null) {
+    const matchKey = makeMatchKey(match);
+    const isUnmatched = match.sectionType === 'live' && !match.score?.found;
+    const statusKind = isUnmatched
+      ? 'unmatched'
+      : (match.sectionType === 'upcoming' ? 'upcoming' : 'live');
+    return {
+      matchKey,
+      isTornSelected: !!(selectedSummary?.matchKey && selectedSummary.matchKey === matchKey),
+      isDetailsActive: activeDetailsMatchKey === matchKey,
+      isUnmatched,
+      statusKind,
+      sourceLabel: match.score?.sourceLabel || match.sourceLabel || '',
+      confidenceLabel: getConfidenceLabel(match)
+    };
+  }
+
+  function renderMatchStatusPills(match, rowState) {
+    const pills = [];
+    const statusLabel = rowState.statusKind === 'unmatched'
+      ? 'Unmatched'
+      : (rowState.statusKind === 'upcoming' ? 'Upcoming' : 'Live');
+    pills.push(`<span class="tm-bookie-row-pill tm-pill-${escapeHtml(rowState.statusKind)}">${escapeHtml(statusLabel)}</span>`);
+    if (uiSettings.showSourceInRows && rowState.sourceLabel) {
+      pills.push(`<span class="tm-bookie-row-pill tm-pill-source">${escapeHtml(rowState.sourceLabel)}</span>`);
+    }
+    if (rowState.confidenceLabel) {
+      pills.push(`<span class="tm-bookie-row-pill tm-pill-confidence">${escapeHtml(rowState.confidenceLabel)}</span>`);
+    }
+    return pills.length ? `<div class="tm-bookie-row-pills">${pills.join('')}</div>` : '';
+  }
+
+  function getMatchRowClassNames(baseClasses, rowState) {
+    const classes = [...baseClasses];
+    if (rowState.isTornSelected) classes.push('tm-row-selected');
+    if (rowState.isDetailsActive) classes.push('tm-row-details-active');
+    if (rowState.isUnmatched) classes.push('tm-row-unmatched');
+    return classes.join(' ');
+  }
+
+  function renderDetailsButton(match, rowState) {
+    if (!uiSettings.showDetailsButtons || uiSettings.detailsPosition === 'off') return '';
+    const title = `${rowState.isDetailsActive ? 'Close' : 'Open'} details for ${match.name || 'selected match'}`;
+    return `<button class="tm-bookie-details-btn${rowState.isDetailsActive ? ' tm-details-active' : ''}" type="button" data-match-key="${escapeHtml(rowState.matchKey)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">⋯</button>`;
+  }
+
+  function renderLiveMatch(match, selectedSummary = null) {
     const scoreHtml = renderScoreboard(match);
     const metaParts = [match.sport, match.stage];
-    if (uiSettings.showSourceInRows) {
-      metaParts.push(match.score?.sourceLabel || match.sourceLabel);
-    }
-    const matchKey = makeMatchKey(match);
-    const isActive = activeDetailsMatchKey === matchKey;
-    const detailsBtn = uiSettings.showDetailsButtons && uiSettings.detailsPosition !== 'off'
-      ? `<button class="tm-bookie-details-btn${isActive ? ' tm-details-active' : ''}" type="button" data-match-key="${escapeHtml(matchKey)}" title="Details">⋯</button>`
-      : '';
+    const rowState = getMatchRowState(match, selectedSummary);
+    if (uiSettings.showSourceInRows) metaParts.push(rowState.sourceLabel);
+    const detailsBtn = renderDetailsButton(match, rowState);
+    const pillHtml = renderMatchStatusPills(match, rowState);
+    const rowClasses = getMatchRowClassNames(['tm-bookie-row', 'tm-bookie-live-row'], rowState);
 
     const hideStatusLine = uiSettings.scoreboardStyle === 'minimal' && match.score?.found;
     return `
-      <div class="tm-bookie-row tm-bookie-live-row" data-event-id="${escapeHtml(match.tornId)}">
+      <div class="${escapeHtml(rowClasses)}" data-event-id="${escapeHtml(match.tornId)}" data-match-key="${escapeHtml(rowState.matchKey)}">
         <div class="tm-bookie-title-row">
-          <div class="tm-bookie-title tm-bookie-live-title">${escapeHtml(match.name)}</div>
+          <div class="tm-bookie-title-stack">
+            <div class="tm-bookie-title tm-bookie-live-title">${escapeHtml(match.name)}</div>
+            ${pillHtml}
+          </div>
           ${detailsBtn}
         </div>
         ${scoreHtml}
@@ -5314,19 +5477,21 @@
       </div>`;
   }
 
-  function renderUpcomingMatch(match) {
+  function renderUpcomingMatch(match, selectedSummary = null) {
     const metaParts = [match.sport, match.stage];
-    if (uiSettings.showSourceInRows) metaParts.push(match.sourceLabel);
-    const matchKey = makeMatchKey(match);
-    const isActive = activeDetailsMatchKey === matchKey;
-    const detailsBtn = uiSettings.showDetailsButtons && uiSettings.detailsPosition !== 'off'
-      ? `<button class="tm-bookie-details-btn${isActive ? ' tm-details-active' : ''}" type="button" data-match-key="${escapeHtml(matchKey)}" title="Details">⋯</button>`
-      : '';
+    const rowState = getMatchRowState(match, selectedSummary);
+    if (uiSettings.showSourceInRows) metaParts.push(rowState.sourceLabel);
+    const detailsBtn = renderDetailsButton(match, rowState);
+    const pillHtml = renderMatchStatusPills(match, rowState);
+    const rowClasses = getMatchRowClassNames(['tm-bookie-row', 'tm-bookie-upcoming-row-card'], rowState);
 
     return `
-      <div class="tm-bookie-row tm-bookie-upcoming-row-card" data-event-id="${escapeHtml(match.tornId)}">
+      <div class="${escapeHtml(rowClasses)}" data-event-id="${escapeHtml(match.tornId)}" data-match-key="${escapeHtml(rowState.matchKey)}">
         <div class="tm-bookie-title-row">
-          <div class="tm-bookie-title">${escapeHtml(match.name)}</div>
+          <div class="tm-bookie-title-stack">
+            <div class="tm-bookie-title">${escapeHtml(match.name)}</div>
+            ${pillHtml}
+          </div>
           ${detailsBtn}
         </div>
         <div class="tm-bookie-meta">${escapeHtml(metaParts.filter(Boolean).join(' - '))}</div>
@@ -6178,6 +6343,135 @@
     return { sport, matchName, competition, startTime, startTimestamp, markets };
   }
 
+  function getSelectedGameSummary() {
+    const active = document.querySelector('li.c-pointer.active');
+    if (!active) return null;
+
+    const sport = clean(active.querySelector('li.game')?.title || active.querySelector('li.game')?.textContent);
+    const matchP = active.querySelector('.matchName p') || active.querySelector('.pop-game .name p');
+    const matchTitle = clean(matchP?.title || matchP?.textContent);
+    let name = matchTitle;
+    let competition = '';
+    const idx = matchTitle.indexOf(' - ');
+    if (idx > -1) {
+      name = matchTitle.slice(0, idx).trim();
+      competition = matchTitle.slice(idx + 3).trim();
+    }
+
+    const statusTitle = clean(active.querySelector('.state-wrap .state')?.title || active.querySelector('.state-wrap .state')?.textContent);
+    const status = statusTitle.replace(/^Due to start at\s*/i, '') || 'Selected';
+    const lookupGame = { sport, matchName: name, competition };
+    const panelMatch = name ? findRenderableMatchForGame(lookupGame) : null;
+    const sourceLabel = panelMatch ? (panelMatch.score?.sourceLabel || panelMatch.sourceLabel || '') : '';
+    const amountText = panelMatch && Number.isFinite(panelMatch.amount) ? formatMoney(panelMatch.amount) : '';
+
+    return {
+      name: name || 'Selected game',
+      sport: panelMatch?.sportLabel || panelMatch?.sport || sport || 'Sport unknown',
+      status: panelMatch?.score?.detail || panelMatch?.status || status,
+      amountText,
+      sourceLabel,
+      matchKey: panelMatch ? makeMatchKey(panelMatch) : ''
+    };
+  }
+
+  function formatSelectedGameSummary(summary) {
+    if (!summary) return { primary: '', secondary: '' };
+    const secondary = [
+      summary.status || 'Selected',
+      summary.sport || 'Sport unknown',
+      summary.amountText ? `Bet: ${summary.amountText}` : '',
+      summary.sourceLabel || ''
+    ].filter(Boolean).join(' - ');
+    return {
+      primary: summary.name || 'Selected game',
+      secondary
+    };
+  }
+
+  function selectedGameSummarySignature(summary) {
+    if (!summary) return '';
+    return [
+      summary.name || '',
+      summary.status || '',
+      summary.sport || '',
+      summary.amountText || '',
+      summary.sourceLabel || '',
+      summary.matchKey || ''
+    ].join('|');
+  }
+
+  function refreshCopyToolsSelectionUi() {
+    if (!uiSettings.showCopyTools) return;
+    const panel = document.getElementById(PANEL_ID);
+    const group = panel?.querySelector?.('.tm-bookie-copy-group');
+    if (!group) return;
+    const summary = getSelectedGameSummary();
+    const signature = selectedGameSummarySignature(summary);
+    if (signature === lastCopyToolsSelectionSignature) return;
+    lastCopyToolsSelectionSignature = signature;
+    group.outerHTML = renderCopyTools();
+    bindCopyTools();
+  }
+
+  function queueCopyToolsSelectionRefresh() {
+    [80, 350, 900].forEach(delay => {
+      setTimeout(refreshCopyToolsSelectionUi, delay);
+    });
+  }
+
+  function installCopyToolsSelectionWatcher() {
+    if (copyToolsSelectionWatcherBound) return;
+    copyToolsSelectionWatcherBound = true;
+    document.addEventListener('click', event => {
+      const target = event.target;
+      if (!target?.closest) return;
+      if (target.closest(`#${PANEL_ID}, #${DETAILS_ID}`)) return;
+      if (target.closest('li.c-pointer, .matchName, .pop-game')) {
+        queueCopyToolsSelectionRefresh();
+      }
+    }, true);
+  }
+
+  function getCopyReceiptTime(copiedAt) {
+    const d = new Date(copiedAt || Date.now());
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function recordCopyReceipt({ mode, matchName, characterCount, quality }) {
+    lastCopyReceipt = {
+      mode,
+      matchName: matchName || 'Selected game',
+      copiedAt: Date.now(),
+      characterCount: Number.isFinite(characterCount) ? characterCount : 0,
+      quality
+    };
+    updateCopyReceiptDisplay();
+  }
+
+  function renderCopyReceipt() {
+    if (!lastCopyReceipt) return '';
+    const timeText = getCopyReceiptTime(lastCopyReceipt.copiedAt);
+    const characterText = `${lastCopyReceipt.characterCount.toLocaleString()} characters`;
+    return `
+      <div class="tm-bookie-copy-receipt" role="status" aria-live="polite">
+        <div class="tm-bookie-copy-receipt-top">Last copied: ${escapeHtml(lastCopyReceipt.mode)}${timeText ? `, ${escapeHtml(timeText)}` : ''}</div>
+        <div class="tm-bookie-copy-receipt-name" title="${escapeHtml(lastCopyReceipt.matchName)}">${escapeHtml(lastCopyReceipt.matchName)}</div>
+        <div class="tm-bookie-copy-receipt-meta">
+          <span class="tm-bookie-copy-chip">Copied ${escapeHtml(characterText)}</span>
+          ${lastCopyReceipt.quality ? `<span class="tm-bookie-copy-chip">${escapeHtml(lastCopyReceipt.quality)}</span>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function updateCopyReceiptDisplay() {
+    const panel = document.getElementById(PANEL_ID);
+    const slot = panel?.querySelector('.tm-bookie-copy-receipt-slot');
+    if (slot) slot.innerHTML = renderCopyReceipt();
+  }
+
   function compactMarkets(markets) {
     const ouGroups = new Map();
     const ahEntries = [];
@@ -6551,57 +6845,127 @@
   }
 
   async function handleCopyDebugReport(button = null) {
-    const originalLabel = button?.textContent || '';
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Copying...';
-    }
+    setButtonActionState(button, 'loading', 'Copying...');
     try {
       const reportText = JSON.stringify(buildDebugReport(), null, 2);
       const ok = await copyToClipboard(reportText);
       if (!ok) {
-        toast('Could not copy debug report.', true);
+        setButtonActionState(button, 'error', 'Copy Failed');
+        showActionNotice({
+          type: 'error',
+          title: 'Copy failed',
+          detail: 'Clipboard blocked. Output was written to the console.'
+        });
         return;
       }
       recordDebugEvent('debug-report-copied', { bytes: reportText.length });
+      recordCopyReceipt({
+        mode: 'Debug report',
+        matchName: 'Debug report',
+        characterCount: reportText.length,
+        quality: 'debug'
+      });
+      setButtonActionState(button, 'success', 'Copied');
+      showActionNotice({
+        type: 'success',
+        title: 'Copied debug report',
+        detail: `${reportText.length.toLocaleString()} characters`
+      });
       showDebugReportNotice();
     } catch (error) {
       recordDebugEvent('debug-report-copy-failed', { error });
-      toast('Could not copy debug report.', true);
+      setButtonActionState(button, 'error', 'Copy Failed');
+      showActionNotice({
+        type: 'error',
+        title: 'Copy failed',
+        detail: 'Could not copy debug report.'
+      });
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalLabel;
-      }
+      restoreButtonActionState(button);
     }
   }
 
   async function handleCopyClick(compact, button = null) {
     const active = document.querySelector('li.c-pointer.active');
-    if (!active) { toast('No game expanded. Click a game first.', true); return; }
+    if (!active) {
+      setButtonActionState(button, 'error', 'Copy Failed');
+      showActionNotice({
+        type: 'warning',
+        title: 'No game selected',
+        detail: 'Open a Torn Bookie game first.'
+      });
+      restoreButtonActionState(button);
+      return;
+    }
+    setButtonActionState(button, 'loading', compact ? 'Collecting...' : 'Copying...');
     await expandExtraOdds(active);
     const game = extractActiveGame();
-    if (!game || !game.matchName) { toast('Could not parse game details.', true); return; }
+    if (!game || !game.matchName) {
+      setButtonActionState(button, 'error', 'Copy Failed');
+      showActionNotice({
+        type: 'error',
+        title: 'Copy failed',
+        detail: 'Could not parse game details.'
+      });
+      restoreButtonActionState(button);
+      return;
+    }
     const baseText = formatGame(game, compact);
-    const originalLabel = button?.textContent || '';
 
     if (!compact) {
       const ok = await copyToClipboard(baseText);
-      if (ok) toast(`Copied${compact ? ' compact' : ''}: ${game.matchName}`, false);
-      else    { toast('Copy failed. Output in console.', true); console.log(baseText); }
+      if (ok) {
+        recordCopyReceipt({
+          mode: 'Full game',
+          matchName: game.matchName,
+          characterCount: baseText.length,
+          quality: 'Torn data only'
+        });
+        setButtonActionState(button, 'success', 'Copied');
+        showActionNotice({
+          type: 'success',
+          title: 'Copied full game',
+          detail: game.matchName
+        });
+      } else {
+        setButtonActionState(button, 'error', 'Copy Failed');
+        showActionNotice({
+          type: 'error',
+          title: 'Copy failed',
+          detail: 'Clipboard blocked. Output was written to the console.'
+        });
+        console.log(baseText);
+      }
+      restoreButtonActionState(button);
       return;
     }
 
     if (areAllProvidersDisabled()) {
       const ok = await copyToClipboard(baseText);
-      if (ok) toast('External analysis unavailable; copied original compact text.', true);
-      else { toast('Copy failed. Output in console.', true); console.log(baseText); }
+      if (ok) {
+        recordCopyReceipt({
+          mode: 'Compact fallback',
+          matchName: game.matchName,
+          characterCount: baseText.length,
+          quality: 'fallback'
+        });
+        setButtonActionState(button, 'success', 'Copied');
+        showActionNotice({
+          type: 'warning',
+          title: 'Copied compact text',
+          detail: 'External analysis unavailable, original game copied'
+        });
+      } else {
+        setButtonActionState(button, 'error', 'Copy Failed');
+        showActionNotice({
+          type: 'error',
+          title: 'Copy failed',
+          detail: 'Clipboard blocked. Output was written to the console.'
+        });
+        console.log(baseText);
+      }
+      restoreButtonActionState(button);
       return;
-    }
-
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Collecting...';
     }
 
     try {
@@ -6620,17 +6984,45 @@
         activeDetailsMatchKey = enrichment.matchKey;
         rerenderPanel();
       }
-      toast(`Copied enriched: ${game.matchName}`, false);
+      recordCopyReceipt({
+        mode: 'Compact',
+        matchName: game.matchName,
+        characterCount: text.length,
+        quality: 'enriched'
+      });
+      setButtonActionState(button, 'success', 'Copied');
+      showActionNotice({
+        type: 'success',
+        title: 'Copied compact text',
+        detail: game.matchName
+      });
     } catch (error) {
       const ok = await copyToClipboard(baseText);
-      if (ok) toast('External analysis unavailable; copied original compact text.', true);
-      else { toast('Copy failed. Output in console.', true); console.log(baseText); }
+      if (ok) {
+        recordCopyReceipt({
+          mode: 'Compact fallback',
+          matchName: game.matchName,
+          characterCount: baseText.length,
+          quality: 'fallback'
+        });
+        setButtonActionState(button, 'success', 'Copied');
+        showActionNotice({
+          type: 'warning',
+          title: 'Copied compact text',
+          detail: 'External analysis unavailable, original game copied'
+        });
+      } else {
+        setButtonActionState(button, 'error', 'Copy Failed');
+        showActionNotice({
+          type: 'error',
+          title: 'Copy failed',
+          detail: 'Clipboard blocked. Output was written to the console.'
+        });
+        console.log(baseText);
+      }
       debugLog('Copy Compact enrichment unavailable', error?.message || error);
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalLabel;
-      }
+      restoreButtonActionState(button);
     }
   }
 
@@ -6667,21 +7059,37 @@
   async function handleShowSelectedDetails(button = null) {
     if (!uiSettings.showDetailsButtons || uiSettings.detailsPosition === 'off') {
       hideDetailsPanel(true);
-      toast('Details panel is disabled in Settings.', true);
+      setButtonActionState(button, 'error', 'Could Not Open');
+      showActionNotice({
+        type: 'warning',
+        title: 'Details unavailable',
+        detail: 'Details panel is disabled in Settings.'
+      });
+      restoreButtonActionState(button);
       return;
     }
     const active = document.querySelector('li.c-pointer.active');
-    if (!active) { toast('No game expanded. Click a game first.', true); return; }
-    const originalLabel = button?.textContent || '';
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Collecting...';
+    if (!active) {
+      setButtonActionState(button, 'error', 'Could Not Open');
+      showActionNotice({
+        type: 'warning',
+        title: 'No game selected',
+        detail: 'Open a Torn Bookie game first.'
+      });
+      restoreButtonActionState(button);
+      return;
     }
+    setButtonActionState(button, 'loading', 'Opening...');
     try {
       await expandExtraOdds(active);
       const game = extractActiveGame();
       if (!game || !game.matchName) {
-        toast('Could not identify the selected game.', true);
+        setButtonActionState(button, 'error', 'Could Not Open');
+        showActionNotice({
+          type: 'error',
+          title: 'Could not open details',
+          detail: 'Could not identify the selected game.'
+        });
         return;
       }
       const panelMatch = findRenderableMatchForGame(game);
@@ -6700,11 +7108,14 @@
           debugLog('Selected fallback details enrichment failed', error?.message || error);
         });
       }
+      setButtonActionState(button, 'success', 'Details Opened');
+      showActionNotice({
+        type: 'success',
+        title: 'Details opened',
+        detail: game.matchName
+      });
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalLabel;
-      }
+      restoreButtonActionState(button);
     }
   }
 
@@ -6728,6 +7139,11 @@
   function renderCopyTools() {
     if (!uiSettings.showCopyTools) return '';
     const caret = copyToolsCollapsed ? '▸' : '▾';
+    const selectedSummary = getSelectedGameSummary();
+    lastCopyToolsSelectionSignature = selectedGameSummarySignature(selectedSummary);
+    const selectedLines = formatSelectedGameSummary(selectedSummary);
+    const copyTitle = selectedSummary ? 'Copy selected Torn Bookie game' : 'Open a Torn Bookie game first';
+    const detailsTitle = selectedSummary ? 'Open details for selected Torn Bookie game' : 'Open a Torn Bookie game first';
     return `
       <div class="tm-bookie-copy-group">
         <button class="tm-bookie-copy-header" type="button">
@@ -6735,15 +7151,25 @@
             <span class="tm-bookie-caret">${caret}</span>
             <span class="tm-bookie-copy-name">Tools</span>
           </span>
-          <span class="tm-bookie-copy-hint">selected game</span>
+          <span class="tm-bookie-copy-hint">${selectedSummary ? 'selected game' : 'no selection'}</span>
         </button>
         ${copyToolsCollapsed ? '' : `
           <div class="tm-bookie-copy-body">
+            ${selectedSummary ? `
+              <div class="tm-bookie-selected-summary">
+                <div class="tm-bookie-selected-label">Selected</div>
+                <div class="tm-bookie-selected-name" title="${escapeHtml(selectedLines.primary)}">${escapeHtml(selectedLines.primary)}</div>
+                <div class="tm-bookie-selected-meta" title="${escapeHtml(selectedLines.secondary)}">${escapeHtml(selectedLines.secondary)}</div>
+              </div>` : `
+              <div class="tm-bookie-selected-summary tm-bookie-selected-empty">
+                <div class="tm-bookie-selected-label">No game selected</div>
+                <div class="tm-bookie-selected-empty-text">Open a Torn Bookie game to enable copy and details actions.</div>
+              </div>`}
             <div class="tm-bookie-copy-buttons">
-              <button class="tm-bookie-copy-btn" type="button" data-copy-mode="full">Copy Full Game</button>
-              <button class="tm-bookie-copy-btn" type="button" data-copy-mode="details">Show Game Details</button>
+              <button class="tm-bookie-copy-btn" type="button" data-copy-mode="full" title="${escapeHtml(copyTitle)}">Copy Full Game</button>
+              <button class="tm-bookie-copy-btn" type="button" data-copy-mode="details" title="${escapeHtml(detailsTitle)}">Show Game Details</button>
             </div>
-            <div class="tm-bookie-copy-note">Click/expand a Torn Bookie game first, then copy it or open its details in the panel.</div>
+            <div class="tm-bookie-copy-receipt-slot">${renderCopyReceipt()}</div>
           </div>`}
       </div>`;
   }
@@ -6984,12 +7410,17 @@
     const content = panel.querySelector('.tm-bookie-content');
     const liveMatches = latestRenderableMatches.filter(match => match.sectionType === 'live');
     const upcomingMatches = latestRenderableMatches.filter(match => match.sectionType === 'upcoming');
+    const selectedSummary = getSelectedGameSummary();
 
     updateHeaderSources(getActiveSources(liveMatches, upcomingMatches));
     updatePanelHiddenState();
 
-    const liveHtml     = uiSettings.showLive     ? renderSportGroups('live',     'Live',     liveMatches,     renderLiveMatch)     : '';
-    const upcomingHtml = uiSettings.showUpcoming ? renderSportGroups('upcoming', 'Upcoming', upcomingMatches, renderUpcomingMatch) : '';
+    const liveHtml = uiSettings.showLive
+      ? renderSportGroups('live', 'Live', liveMatches, match => renderLiveMatch(match, selectedSummary))
+      : '';
+    const upcomingHtml = uiSettings.showUpcoming
+      ? renderSportGroups('upcoming', 'Upcoming', upcomingMatches, match => renderUpcomingMatch(match, selectedSummary))
+      : '';
 
     content.innerHTML = `
       ${renderUpdatedBar()}
@@ -7083,6 +7514,15 @@
   --tm-warn: #ffcc00;
   --tm-good: #2a6b3a;
   --tm-bad: #a33;
+  --tm-success: var(--tm-good);
+  --tm-success-bg: color-mix(in srgb, var(--tm-good) 22%, transparent);
+  --tm-info: var(--tm-accent);
+  --tm-info-bg: color-mix(in srgb, var(--tm-accent) 18%, transparent);
+  --tm-warning: var(--tm-warn);
+  --tm-warning-bg: color-mix(in srgb, var(--tm-warn) 16%, transparent);
+  --tm-danger: var(--tm-bad);
+  --tm-danger-bg: color-mix(in srgb, var(--tm-bad) 22%, transparent);
+  --tm-focus: var(--tm-accent);
   --tm-card-bg: #ffffff;
   --tm-card-text: #111111;
   --tm-card-border: #e5e5e5;
@@ -7235,6 +7675,216 @@
   --tm-source-bbcsport: #B85C38;
   --tm-source-torn: #838487;
   --tm-font: Arial, Helvetica, sans-serif;
+}
+
+.tm-bookie-action-notice {
+  --tm-bg: #1f1f1f;
+  --tm-bg-2: #242424;
+  --tm-border: #3a3a3a;
+  --tm-text: #ffffff;
+  --tm-muted: #b8b8b8;
+  --tm-accent: #cc0000;
+  --tm-warn: #ffcc00;
+  --tm-good: #2a6b3a;
+  --tm-bad: #a33;
+  --tm-success: var(--tm-good);
+  --tm-success-bg: color-mix(in srgb, var(--tm-good) 22%, transparent);
+  --tm-info: var(--tm-accent);
+  --tm-info-bg: color-mix(in srgb, var(--tm-accent) 18%, transparent);
+  --tm-warning: var(--tm-warn);
+  --tm-warning-bg: color-mix(in srgb, var(--tm-warn) 16%, transparent);
+  --tm-danger: var(--tm-bad);
+  --tm-danger-bg: color-mix(in srgb, var(--tm-bad) 22%, transparent);
+  --tm-focus: var(--tm-accent);
+  position: fixed;
+  bottom: 24px;
+  z-index: 1000000;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px 12px;
+  color: var(--tm-text);
+  background: color-mix(in srgb, var(--tm-bg-2) 96%, #000);
+  border: 1px solid var(--tm-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.42);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+}
+
+.tm-bookie-action-notice.tm-layout-right {
+  right: ${EDGE_GAP}px;
+}
+
+.tm-bookie-action-notice.tm-layout-left {
+  left: ${EDGE_GAP}px;
+}
+
+.tm-bookie-action-notice.tm-theme-bloody {
+  --tm-bg: #0a0a0b;
+  --tm-bg-2: #141416;
+  --tm-border: #34272a;
+  --tm-text: #f2ece8;
+  --tm-muted: #b8aaa6;
+  --tm-accent: #780606;
+  --tm-warn: #e3a13b;
+  --tm-good: #5dba6d;
+  --tm-bad: #b3262e;
+}
+
+.tm-bookie-action-notice.tm-theme-cyberpunk {
+  --tm-bg: #1c2127;
+  --tm-bg-2: #282c34;
+  --tm-border: #35393e;
+  --tm-text: #dadada;
+  --tm-muted: #999999;
+  --tm-accent: #2e80f2;
+  --tm-warn: #e5b567;
+  --tm-good: #3eb4bf;
+  --tm-bad: #e83e3e;
+}
+
+.tm-bookie-action-notice.tm-theme-light {
+  --tm-bg: #f6f7f9;
+  --tm-bg-2: #ffffff;
+  --tm-border: #c7d0dc;
+  --tm-text: #18212f;
+  --tm-muted: #617083;
+  --tm-accent: #2d6cdf;
+  --tm-warn: #9a6b00;
+  --tm-good: #1f7a46;
+  --tm-bad: #a33;
+}
+
+.tm-bookie-action-notice.tm-theme-c64 {
+  --tm-bg: #202124;
+  --tm-bg-2: #313236;
+  --tm-border: #48494D;
+  --tm-text: #E5E3D8;
+  --tm-muted: #A3A3A0;
+  --tm-accent: #D9782D;
+  --tm-warn: #E3A13B;
+  --tm-good: #E5D6B0;
+  --tm-bad: #B85C38;
+}
+
+.tm-bookie-action-notice .tm-bookie-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.tm-bookie-action-notice.tm-notice-success .tm-bookie-notice-icon {
+  color: var(--tm-success);
+  background: var(--tm-success-bg);
+}
+
+.tm-bookie-action-notice.tm-notice-info .tm-bookie-notice-icon,
+.tm-bookie-action-notice.tm-notice-loading .tm-bookie-notice-icon {
+  color: var(--tm-info);
+  background: var(--tm-info-bg);
+}
+
+.tm-bookie-action-notice.tm-notice-warning .tm-bookie-notice-icon {
+  color: var(--tm-warning);
+  background: var(--tm-warning-bg);
+}
+
+.tm-bookie-action-notice.tm-notice-error .tm-bookie-notice-icon {
+  color: var(--tm-danger);
+  background: var(--tm-danger-bg);
+}
+
+.tm-bookie-action-notice.tm-notice-loading .tm-bookie-notice-icon::before {
+  content: '';
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, var(--tm-info) 35%, transparent);
+  border-top-color: var(--tm-info);
+  border-radius: 999px;
+  animation: tm-bookie-spin 0.8s linear infinite;
+}
+
+.tm-bookie-notice-copy {
+  min-width: 0;
+}
+
+.tm-bookie-notice-title {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.tm-bookie-notice-detail {
+  margin-top: 2px;
+  color: var(--tm-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-bookie-notice-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--tm-info);
+  transform-origin: left center;
+  animation: tm-bookie-notice-progress 2200ms linear forwards;
+}
+
+.tm-bookie-action-notice.tm-notice-success .tm-bookie-notice-progress {
+  background: var(--tm-success);
+}
+
+.tm-bookie-action-notice.tm-notice-warning .tm-bookie-notice-progress {
+  background: var(--tm-warning);
+  animation-duration: 3500ms;
+}
+
+.tm-bookie-action-notice.tm-notice-error .tm-bookie-notice-progress {
+  background: var(--tm-danger);
+  animation-duration: 3500ms;
+}
+
+.tm-bookie-action-notice.tm-notice-loading .tm-bookie-notice-progress {
+  animation: none;
+}
+
+@keyframes tm-bookie-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes tm-bookie-notice-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (max-width: 420px) {
+  .tm-bookie-action-notice.tm-layout-left,
+  .tm-bookie-action-notice.tm-layout-right {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-bookie-action-notice.tm-notice-loading .tm-bookie-notice-icon::before,
+  .tm-bookie-notice-progress,
+  #${PANEL_ID} .tm-bookie-copy-btn.is-loading::before,
+  #${PANEL_ID} .tm-bookie-debug-report-btn.is-loading::before {
+    animation: none;
+  }
 }
 
 #${PANEL_ID}.tm-bookie-panel-hidden {
@@ -7686,6 +8336,24 @@
   z-index: 1;
 }
 
+#${PANEL_ID} .tm-bookie-row.tm-row-selected {
+  background: color-mix(in srgb, var(--tm-info-bg) 54%, var(--tm-bg-2));
+  box-shadow: inset 3px 0 0 var(--tm-info);
+}
+
+#${PANEL_ID} .tm-bookie-row.tm-row-details-active {
+  background: color-mix(in srgb, var(--tm-info-bg) 68%, var(--tm-bg-2));
+  box-shadow: inset 4px 0 0 var(--tm-accent);
+}
+
+#${PANEL_ID} .tm-bookie-row.tm-row-selected.tm-row-details-active {
+  box-shadow: inset 4px 0 0 var(--tm-accent), inset 7px 0 0 color-mix(in srgb, var(--tm-info) 46%, transparent);
+}
+
+#${PANEL_ID} .tm-bookie-row.tm-row-unmatched {
+  background: color-mix(in srgb, var(--tm-warning-bg) 42%, var(--tm-bg-2));
+}
+
 #${PANEL_ID}.tm-theme-bloody .tm-bookie-live-row {
   background: var(--tm-bg);
   overflow: hidden;
@@ -7703,6 +8371,13 @@
   pointer-events: none;
   background:
     linear-gradient(rgba(10,10,11,0.52), rgba(10,10,11,0.72)),
+    var(--tm-bloody-row-image);
+}
+
+#${PANEL_ID}.tm-theme-bloody .tm-bookie-row.tm-row-selected::before,
+#${PANEL_ID}.tm-theme-bloody .tm-bookie-row.tm-row-details-active::before {
+  background:
+    linear-gradient(rgba(10,10,11,0.38), rgba(10,10,11,0.62)),
     var(--tm-bloody-row-image);
 }
 
@@ -7728,6 +8403,60 @@
   line-height: 1.15;
   margin-bottom: 5px;
   color: var(--tm-muted);
+}
+
+#${PANEL_ID} .tm-bookie-title-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#${PANEL_ID} .tm-bookie-row-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 6px;
+  min-height: 17px;
+}
+
+#${PANEL_ID} .tm-bookie-row-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 15px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--tm-muted) 34%, transparent);
+  border-radius: 999px;
+  color: var(--tm-muted);
+  background: color-mix(in srgb, var(--tm-bg-3) 82%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#${PANEL_ID} .tm-bookie-row-pill.tm-pill-live {
+  color: var(--tm-success);
+  border-color: color-mix(in srgb, var(--tm-success) 44%, transparent);
+  background: var(--tm-success-bg);
+}
+
+#${PANEL_ID} .tm-bookie-row-pill.tm-pill-upcoming {
+  color: var(--tm-info);
+  border-color: color-mix(in srgb, var(--tm-info) 44%, transparent);
+  background: var(--tm-info-bg);
+}
+
+#${PANEL_ID} .tm-bookie-row-pill.tm-pill-unmatched {
+  color: var(--tm-warning);
+  border-color: color-mix(in srgb, var(--tm-warning) 48%, transparent);
+  background: var(--tm-warning-bg);
+}
+
+#${PANEL_ID} .tm-bookie-row-pill.tm-pill-source,
+#${PANEL_ID} .tm-bookie-row-pill.tm-pill-confidence {
+  max-width: 132px;
 }
 
 #${PANEL_ID}.tm-theme-cyberpunk .tm-bookie-live-title,
@@ -7939,6 +8668,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 9px;
 }
 
 #${PANEL_ID} .tm-bookie-copy-btn {
@@ -7952,10 +8682,138 @@
   font-size: 12px;
   font-family: var(--tm-font);
   box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  min-height: 34px;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
 }
 
-#${PANEL_ID} .tm-bookie-copy-btn:hover {
+#${PANEL_ID} .tm-bookie-copy-btn:hover:not(:disabled) {
   filter: brightness(1.16);
+}
+
+#${PANEL_ID} .tm-bookie-selected-summary {
+  padding: 8px 9px;
+  background: color-mix(in srgb, var(--tm-bg-3) 78%, transparent);
+  border: 1px solid var(--tm-border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+#${PANEL_ID} .tm-bookie-selected-empty {
+  border-style: dashed;
+}
+
+#${PANEL_ID} .tm-bookie-selected-label,
+#${PANEL_ID} .tm-bookie-copy-receipt-top {
+  color: var(--tm-muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+#${PANEL_ID} .tm-bookie-selected-name,
+#${PANEL_ID} .tm-bookie-copy-receipt-name {
+  margin-top: 4px;
+  color: var(--tm-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#${PANEL_ID} .tm-bookie-selected-meta,
+#${PANEL_ID} .tm-bookie-selected-empty-text {
+  margin-top: 3px;
+  color: var(--tm-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#${PANEL_ID} .tm-bookie-selected-empty-text {
+  white-space: normal;
+}
+
+#${PANEL_ID} .tm-bookie-copy-receipt-slot:empty {
+  display: none;
+}
+
+#${PANEL_ID} .tm-bookie-copy-receipt {
+  margin-top: 9px;
+  padding: 8px 9px;
+  background: var(--tm-info-bg);
+  border: 1px solid color-mix(in srgb, var(--tm-info) 34%, var(--tm-border));
+  border-radius: 6px;
+  min-width: 0;
+}
+
+#${PANEL_ID} .tm-bookie-copy-receipt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+#${PANEL_ID} .tm-bookie-copy-chip {
+  max-width: 100%;
+  padding: 2px 6px;
+  color: var(--tm-info);
+  background: color-mix(in srgb, var(--tm-info-bg) 72%, var(--tm-bg-2));
+  border: 1px solid color-mix(in srgb, var(--tm-info) 28%, transparent);
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#${PANEL_ID} .tm-bookie-copy-btn.is-loading,
+#${PANEL_ID} .tm-bookie-debug-report-btn.is-loading {
+  cursor: wait;
+  color: var(--tm-info);
+  border-color: var(--tm-info);
+  background: var(--tm-info-bg);
+}
+
+#${PANEL_ID} .tm-bookie-copy-btn.is-success,
+#${PANEL_ID} .tm-bookie-debug-report-btn.is-success {
+  color: var(--tm-success);
+  border-color: var(--tm-success);
+  background: var(--tm-success-bg);
+}
+
+#${PANEL_ID} .tm-bookie-copy-btn.is-error,
+#${PANEL_ID} .tm-bookie-debug-report-btn.is-error {
+  color: var(--tm-danger);
+  border-color: var(--tm-danger);
+  background: var(--tm-danger-bg);
+}
+
+#${PANEL_ID} .tm-bookie-copy-btn.is-disabled,
+#${PANEL_ID} .tm-bookie-debug-report-btn.is-disabled,
+#${PANEL_ID} .tm-bookie-copy-btn:disabled,
+#${PANEL_ID} .tm-bookie-debug-report-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+#${PANEL_ID} .tm-bookie-copy-btn.is-loading::before,
+#${PANEL_ID} .tm-bookie-debug-report-btn.is-loading::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border: 2px solid color-mix(in srgb, var(--tm-info) 35%, transparent);
+  border-top-color: var(--tm-info);
+  border-radius: 999px;
+  vertical-align: -1px;
+  animation: tm-bookie-spin 0.8s linear infinite;
 }
 
 #${PANEL_ID} .tm-bookie-copy-note {
@@ -8032,16 +8890,13 @@
   padding: 6px 9px;
   font-size: 11px;
   font-family: var(--tm-font);
+  min-height: 30px;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
 }
 
 #${PANEL_ID} .tm-bookie-debug-report-btn:hover {
   background: var(--tm-hover);
   border-color: var(--tm-accent);
-}
-
-#${PANEL_ID} .tm-bookie-debug-report-btn:disabled {
-  cursor: wait;
-  opacity: 0.7;
 }
 
 #${PANEL_ID} .tm-bookie-settings-sports {
@@ -8160,7 +9015,6 @@
 
 #${PANEL_ID} .tm-bookie-title-row .tm-bookie-title,
 #${PANEL_ID} .tm-bookie-title-row .tm-bookie-live-title {
-  flex: 1 1 0;
   min-width: 0;
   margin-bottom: 0;
 }
@@ -8183,6 +9037,20 @@
   background: var(--tm-accent);
   border-color: var(--tm-accent);
   color: #fff;
+}
+
+#${PANEL_ID} .tm-row-details-active .tm-bookie-details-btn.tm-details-active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tm-accent) 28%, transparent);
+}
+
+#${PANEL_ID} .tm-bookie-details-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-copy-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-debug-report-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-sport-header:focus-visible,
+#${PANEL_ID} .tm-bookie-copy-header:focus-visible,
+#${PANEL_ID} .tm-bookie-settings-header:focus-visible {
+  outline: 2px solid var(--tm-focus);
+  outline-offset: 2px;
 }
       `;
 
@@ -8845,6 +9713,7 @@
 
   whenBodyReady(() => {
     getOrCreatePanel();
+    installCopyToolsSelectionWatcher();
     setTimeout(refreshPanel, 1500);
     setRefreshMode('30s');
   });

@@ -160,3 +160,11 @@ test('formatGame renders a deterministic copy-tool block', () => {
   assert.match(out, /Market: Moneyline/);
   assert.match(out, /\[SUSPENDED\]/);
 });
+
+test('copy tools remain clickable when no Torn game was selected at render time', () => {
+  const html = a.renderCopyTools();
+  assert.match(html, /Copy Full Game/);
+  assert.match(html, /Show Game Details/);
+  assert.doesNotMatch(html, /class="tm-bookie-copy-btn"[^>]*\sdisabled\b/);
+  assert.doesNotMatch(html, /aria-disabled="true"/);
+});

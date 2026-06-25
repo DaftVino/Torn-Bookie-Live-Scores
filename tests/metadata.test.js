@@ -90,13 +90,13 @@ test('SCRIPT_VERSION defaults to @version when GM_info is absent', () => {
   const { loadUserscript } = require('./load-userscript.js');
   const api = loadUserscript();
   const headerVersion = metaValues('version')[0];
-  assert.equal(headerVersion, '2.5.7');
-  assert.equal(api.SCRIPT_VERSION, '2.5.7');
+  assert.equal(headerVersion, '2.5.8');
+  assert.equal(api.SCRIPT_VERSION, '2.5.8');
 });
 
 test('SCRIPT_VERSION is overridden by injected GM_info.script.version', () => {
   const { loadUserscript } = require('./load-userscript.js');
-  const injectedVersion = '2.5.7';
+  const injectedVersion = '2.5.8';
   const api = loadUserscript({
     gmInfo: {
       script: {

@@ -91,7 +91,7 @@ const EXPORT_NAMES = [
   // DOM-free HTML render helpers (return strings; exercised headlessly)
   'renderScoreboard', 'renderCompactScoreboard', 'renderClassicScoreboard',
   'renderMinimalScoreboard', 'renderLiveMatch', 'renderUpcomingMatch',
-  'renderSportGroups', 'renderErrorBody', 'isSportGroupCollapsed',
+  'renderSportGroups', 'renderCopyTools', 'renderErrorBody', 'isSportGroupCollapsed',
   'formatGame', 'compactMarkets',
   // settings / debug
   'deepMergeSettings', 'isRenderOnlySetting',

@@ -1,4 +1,15 @@
-# Torn Bookie Live Scores v2.5.3 Patch Notes
+# Changelog
+
+## Torn Bookie Live Scores v2.5.8 - 2026-06-24
+
+- Added themed action notices for copy, details, debug report, fallback, and error feedback.
+- Added consistent loading, success, error, and disabled states for copy/details/debug buttons.
+- Added selected-game context, no-selection disabled states, and session-only copy receipts in Tools.
+- Added selected-row, details-active-row, and unmatched-row visual states with compact status/source/confidence pills.
+- Kept copy payload output unchanged and stored only receipt metadata, not copied text.
+- Preserved provider ordering, Settings controls, existing details behavior, and the single-file userscript model.
+
+## Torn Bookie Live Scores v2.5.3 Patch Notes
 
 These notes describe the feature set present on `main` at version `2.5.3`, before the current round of testing and follow-up edits.
 
