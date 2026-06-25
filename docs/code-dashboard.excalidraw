@@ -1,13 +1,13 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://excalidraw.com",
+  "source": "https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor",
   "elements": [
     {
       "id": "title-box",
       "type": "rectangle",
-      "x": -720,
-      "y": -520,
+      "x": -648.5714285714287,
+      "y": -519.99997820173,
       "width": 1440,
       "height": 88,
       "angle": 0,
@@ -20,21 +20,24 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1001,
-      "version": 1,
-      "versionNonce": 100101,
+      "version": 50,
+      "versionNonce": 438729192,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392913192,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a0"
     },
     {
       "id": "title-text",
       "type": "text",
-      "x": -682,
-      "y": -498,
+      "x": -610.5714285714287,
+      "y": -497.99997820172996,
       "width": 1364,
       "height": 42,
       "angle": 0,
@@ -49,11 +52,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1002,
-      "version": 1,
-      "versionNonce": 100201,
+      "version": 50,
+      "versionNonce": 1041169640,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392913192,
       "link": null,
       "locked": false,
       "text": "Torn Bookie Live Scores - Code Dashboard",
@@ -63,13 +66,15 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "Torn Bookie Live Scores - Code Dashboard",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a1",
+      "autoResize": true
     },
     {
       "id": "legend-text",
       "type": "text",
-      "x": -670,
-      "y": -432,
+      "x": -598.5714285714287,
+      "y": -431.99997820172996,
       "width": 1340,
       "height": 25,
       "angle": 0,
@@ -84,11 +89,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1003,
-      "version": 1,
-      "versionNonce": 100301,
+      "version": 50,
+      "versionNonce": 2012159976,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392913192,
       "link": null,
       "locked": false,
       "text": "Open this file with the Excalidraw extension. Line ranges point into Torn_Bookie_Live_Scores.js unless noted.",
@@ -98,7 +103,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "Open this file with the Excalidraw extension. Line ranges point into Torn_Bookie_Live_Scores.js unless noted.",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a2",
+      "autoResize": true
     },
     {
       "id": "flow-title",
@@ -119,11 +126,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1004,
-      "version": 1,
-      "versionNonce": 100401,
+      "version": 2,
+      "versionNonce": 172601320,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "Runtime Data Flow",
@@ -133,7 +140,9 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Runtime Data Flow",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a3",
+      "autoResize": true
     },
     {
       "id": "box-torn",
@@ -152,15 +161,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1005,
-      "version": 1,
-      "versionNonce": 100501,
+      "version": 2,
+      "versionNonce": 1549247128,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a4"
     },
     {
       "id": "text-torn",
@@ -181,11 +193,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1006,
-      "version": 1,
-      "versionNonce": 100601,
+      "version": 2,
+      "versionNonce": 1885041384,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "Torn Bookie page\nsid=bookieApi\nsource data only",
@@ -195,7 +207,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "Torn Bookie page\nsid=bookieApi\nsource data only",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a5",
+      "autoResize": true
     },
     {
       "id": "box-capture",
@@ -214,15 +228,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1007,
-      "version": 1,
-      "versionNonce": 100701,
+      "version": 2,
+      "versionNonce": 1802997656,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a6"
     },
     {
       "id": "text-capture",
@@ -243,11 +260,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1008,
-      "version": 1,
-      "versionNonce": 100801,
+      "version": 2,
+      "versionNonce": 1430050280,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "fetch/XHR interceptors\ntryParseBookieResponse\nlines 1494-1704",
@@ -257,7 +274,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "fetch/XHR interceptors\ntryParseBookieResponse\nlines 1494-1704",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a7",
+      "autoResize": true
     },
     {
       "id": "box-refresh",
@@ -276,15 +295,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1009,
-      "version": 1,
-      "versionNonce": 100901,
+      "version": 2,
+      "versionNonce": 1242684568,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a8"
     },
     {
       "id": "text-refresh",
@@ -305,11 +327,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1010,
-      "version": 1,
-      "versionNonce": 101001,
+      "version": 2,
+      "versionNonce": 2113525992,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "refreshPanel\nextractLiveBets\nextractUpcomingBets\nlines 2795-2844, 9794",
@@ -319,7 +341,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "refreshPanel\nextractLiveBets\nextractUpcomingBets\nlines 2795-2844, 9794",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a9",
+      "autoResize": true
     },
     {
       "id": "box-match",
@@ -338,15 +362,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1011,
-      "version": 1,
-      "versionNonce": 101101,
+      "version": 2,
+      "versionNonce": 1507494296,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aA"
     },
     {
       "id": "text-match",
@@ -367,11 +394,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1012,
-      "version": 1,
-      "versionNonce": 101201,
+      "version": 2,
+      "versionNonce": 773749736,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "findScoreForMatch\nprovider ladder\nfirst confident result\nlines 5182-5262",
@@ -381,7 +408,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "findScoreForMatch\nprovider ladder\nfirst confident result\nlines 5182-5262",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aB",
+      "autoResize": true
     },
     {
       "id": "box-render",
@@ -400,15 +429,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1013,
-      "version": 1,
-      "versionNonce": 101301,
+      "version": 2,
+      "versionNonce": 637900440,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aC"
     },
     {
       "id": "text-render",
@@ -429,11 +461,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1014,
-      "version": 1,
-      "versionNonce": 101401,
+      "version": 2,
+      "versionNonce": 1471594216,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "renderPanel + CSS\nrows, settings, details\nlines 5453-7589",
@@ -443,7 +475,9 @@
       "verticalAlign": "middle",
       "containerId": null,
       "originalText": "renderPanel + CSS\nrows, settings, details\nlines 5453-7589",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aD",
+      "autoResize": true
     },
     {
       "id": "arrow-1",
@@ -462,21 +496,33 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1015,
-      "version": 1,
-      "versionNonce": 101501,
+      "version": 2,
+      "versionNonce": 860291992,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [54, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          54,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aE"
     },
     {
       "id": "arrow-2",
@@ -495,21 +541,33 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1016,
-      "version": 1,
-      "versionNonce": 101601,
+      "version": 2,
+      "versionNonce": 1263444456,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [54, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          54,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aF"
     },
     {
       "id": "arrow-3",
@@ -528,21 +586,33 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1017,
-      "version": 1,
-      "versionNonce": 101701,
+      "version": 2,
+      "versionNonce": 1339216024,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [54, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          54,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aG"
     },
     {
       "id": "arrow-4",
@@ -561,29 +631,41 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1018,
-      "version": 1,
-      "versionNonce": 101801,
+      "version": 2,
+      "versionNonce": 1743922408,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [54, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          54,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aH"
     },
     {
       "id": "provider-frame",
       "type": "rectangle",
       "x": -680,
-      "y": -150,
+      "y": -175,
       "width": 690,
-      "height": 300,
+      "height": 334.28571428571433,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "#ffffff",
@@ -594,21 +676,24 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1019,
-      "version": 1,
-      "versionNonce": 101901,
+      "version": 72,
+      "versionNonce": 1395861224,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782395633026,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aI"
     },
     {
       "id": "provider-text",
       "type": "text",
       "x": -650,
-      "y": -128,
+      "y": -153,
       "width": 630,
       "height": 250,
       "angle": 0,
@@ -623,11 +708,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1020,
-      "version": 1,
-      "versionNonce": 102001,
+      "version": 49,
+      "versionNonce": 790224360,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395627189,
       "link": null,
       "locked": false,
       "text": "Provider Layer\n\nEntry: getProviderPriority / chooseScoreSource lines 2657-2755\nResolver: resolveProviderMatch lines 2451-2512\n\nEffective ladders:\n- Live tennis: SofaScore live board -> ESPN tennis date board\n- Cricket: ESPNcricinfo -> LiveScore\n- Mapped soccer: ESPN -> SofaScore -> API-Football\n- Unmapped soccer: SofaScore -> API-Football\n- Rugby/AFL: ESPN/SofaScore -> API-Sports/LiveScore\n- Esports: PandaScore when enabled and token-configured\n\nParser homes: _findEspn, _findEspnTennis, _findSofascore, _findApiFootball, _findApiSports, _findPandaScore",
@@ -637,15 +722,17 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Provider Layer\n\nEntry: getProviderPriority / chooseScoreSource lines 2657-2755\nResolver: resolveProviderMatch lines 2451-2512\n\nEffective ladders:\n- Live tennis: SofaScore live board -> ESPN tennis date board\n- Cricket: ESPNcricinfo -> LiveScore\n- Mapped soccer: ESPN -> SofaScore -> API-Football\n- Unmapped soccer: SofaScore -> API-Football\n- Rugby/AFL: ESPN/SofaScore -> API-Sports/LiveScore\n- Esports: PandaScore when enabled and token-configured\n\nParser homes: _findEspn, _findEspnTennis, _findSofascore, _findApiFootball, _findApiSports, _findPandaScore",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aJ",
+      "autoResize": true
     },
     {
       "id": "matching-frame",
       "type": "rectangle",
       "x": 50,
-      "y": -150,
+      "y": -175,
       "width": 360,
-      "height": 300,
+      "height": 334.28571428571433,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "#fff9db",
@@ -656,23 +743,26 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1021,
-      "version": 1,
-      "versionNonce": 102101,
+      "version": 72,
+      "versionNonce": 170204056,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782395633026,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aK"
     },
     {
       "id": "matching-text",
       "type": "text",
       "x": 75,
-      "y": -126,
-      "width": 310,
-      "height": 240,
+      "y": -151,
+      "width": 308.60032435825883,
+      "height": 300,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -685,29 +775,31 @@
       "frameId": null,
       "roundness": null,
       "seed": 1022,
-      "version": 1,
-      "versionNonce": 102201,
+      "version": 178,
+      "versionNonce": 653648104,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395627189,
       "link": null,
       "locked": false,
-      "text": "Matching Core\n\nnormalizeName\ncalcTeamMatchScore\ncalcIndividualNameMatchScore\nmatchTeamPair\nscoreCandidate\nselectBestCandidate\ncandidateDiagnostic\n\nlines 1711-1777 and 1944-2414\n\nKey risk area: false positives. Keep non-tennis team matching conservative.",
+      "text": "Matching Core\n\nnormalizeName\ncalcTeamMatchScore\ncalcIndividualNameMatchScore\nmatchTeamPair\nscoreCandidate\nselectBestCandidate\ncandidateDiagnostic\n\nlines 1711-1777 and 1944-2414\n\nKey risk area: false positives. \nKeep non-tennis team matching\nconservative.",
       "fontSize": 16,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Matching Core\n\nnormalizeName\ncalcTeamMatchScore\ncalcIndividualNameMatchScore\nmatchTeamPair\nscoreCandidate\nselectBestCandidate\ncandidateDiagnostic\n\nlines 1711-1777 and 1944-2414\n\nKey risk area: false positives. Keep non-tennis team matching conservative.",
-      "lineHeight": 1.25
+      "originalText": "Matching Core\n\nnormalizeName\ncalcTeamMatchScore\ncalcIndividualNameMatchScore\nmatchTeamPair\nscoreCandidate\nselectBestCandidate\ncandidateDiagnostic\n\nlines 1711-1777 and 1944-2414\n\nKey risk area: false positives. \nKeep non-tennis team matching conservative.",
+      "lineHeight": 1.25,
+      "index": "aL",
+      "autoResize": false
     },
     {
       "id": "cache-frame",
       "type": "rectangle",
       "x": 450,
-      "y": -150,
+      "y": -175,
       "width": 372,
-      "height": 300,
+      "height": 334.28571428571433,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "#f1f3f5",
@@ -718,21 +810,24 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1023,
-      "version": 1,
-      "versionNonce": 102301,
+      "version": 95,
+      "versionNonce": 1795033576,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782395633026,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aM"
     },
     {
       "id": "cache-text",
       "type": "text",
       "x": 476,
-      "y": -126,
+      "y": -151,
       "width": 320,
       "height": 240,
       "angle": 0,
@@ -747,11 +842,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1024,
-      "version": 1,
-      "versionNonce": 102401,
+      "version": 28,
+      "versionNonce": 1784251368,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395627189,
       "link": null,
       "locked": false,
       "text": "Request Control\n\nfetchWithCache lines 2552-2599\nGM fetch wrapper lines 1595-1697\nresolvedEventCache lines 2414-2451\nBYOK quota ledger lines 831-1102\n\nRules:\n- 45s success TTL\n- 15s error TTL\n- in-flight request coalescing\n- manual-only API-Sports by default",
@@ -761,7 +856,9 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Request Control\n\nfetchWithCache lines 2552-2599\nGM fetch wrapper lines 1595-1697\nresolvedEventCache lines 2414-2451\nBYOK quota ledger lines 831-1102\n\nRules:\n- 45s success TTL\n- 15s error TTL\n- in-flight request coalescing\n- manual-only API-Sports by default",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aN",
+      "autoResize": true
     },
     {
       "id": "ui-frame",
@@ -780,15 +877,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1025,
-      "version": 1,
-      "versionNonce": 102501,
+      "version": 2,
+      "versionNonce": 58311832,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aO"
     },
     {
       "id": "ui-text",
@@ -809,11 +909,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1026,
-      "version": 1,
-      "versionNonce": 102601,
+      "version": 2,
+      "versionNonce": 1566863592,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "UI Surface\n\nPanel creation + full CSS: getOrCreatePanel lines 7591-9567\nPanel render/error: lines 7512-7589\nScoreboards and rows: lines 5453-5646\nSettings: lines 7295-7512\nBinding: lines 9567-9792\n\nMost visual bugs live here.",
@@ -823,7 +923,9 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "UI Surface\n\nPanel creation + full CSS: getOrCreatePanel lines 7591-9567\nPanel render/error: lines 7512-7589\nScoreboards and rows: lines 5453-5646\nSettings: lines 7295-7512\nBinding: lines 9567-9792\n\nMost visual bugs live here.",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aP",
+      "autoResize": true
     },
     {
       "id": "details-frame",
@@ -842,15 +944,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1027,
-      "version": 1,
-      "versionNonce": 102701,
+      "version": 2,
+      "versionNonce": 1845850520,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aQ"
     },
     {
       "id": "details-text",
@@ -871,11 +976,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1028,
-      "version": 1,
-      "versionNonce": 102801,
+      "version": 2,
+      "versionNonce": 1953895400,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "Details + Copy Tools\n\nDetails pane and enrichment lines 5646-6365\nOdds analysis lines 4674-5180\nCopy tools lines 6365-7240\n\nProgressive model:\nscore first, then stats/H2H/odds/commentary on demand.",
@@ -885,7 +990,9 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Details + Copy Tools\n\nDetails pane and enrichment lines 5646-6365\nOdds analysis lines 4674-5180\nCopy tools lines 6365-7240\n\nProgressive model:\nscore first, then stats/H2H/odds/commentary on demand.",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aR",
+      "autoResize": true
     },
     {
       "id": "debug-frame",
@@ -904,15 +1011,18 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1029,
-      "version": 1,
-      "versionNonce": 102901,
+      "version": 2,
+      "versionNonce": 1150516888,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782392883709,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aS"
     },
     {
       "id": "debug-text",
@@ -933,11 +1043,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1030,
-      "version": 1,
-      "versionNonce": 103001,
+      "version": 2,
+      "versionNonce": 526079720,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782392883709,
       "link": null,
       "locked": false,
       "text": "Debug + Privacy\n\nSanitization and report builder lines 771-1374\nNetwork shape samples lines 1115-1169\nDebug copy action lines 6965-7006\n\nNever include raw Torn responses, bet amounts, provider keys, cookies, or raw provider payloads.",
@@ -947,13 +1057,15 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Debug + Privacy\n\nSanitization and report builder lines 771-1374\nNetwork shape samples lines 1115-1169\nDebug copy action lines 6965-7006\n\nNever include raw Torn responses, bet amounts, provider keys, cookies, or raw provider payloads.",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aT",
+      "autoResize": true
     },
     {
       "id": "tests-frame",
       "type": "rectangle",
       "x": -680,
-      "y": 530,
+      "y": 520,
       "width": 720,
       "height": 190,
       "angle": 0,
@@ -966,21 +1078,24 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1031,
-      "version": 1,
-      "versionNonce": 103101,
+      "version": 4,
+      "versionNonce": 1427966952,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782395641951,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aU"
     },
     {
       "id": "tests-text",
       "type": "text",
       "x": -650,
-      "y": 552,
+      "y": 542,
       "width": 660,
       "height": 140,
       "angle": 0,
@@ -995,11 +1110,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1032,
-      "version": 1,
-      "versionNonce": 103201,
+      "version": 4,
+      "versionNonce": 1610090136,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395641951,
       "link": null,
       "locked": false,
       "text": "Test Harness\n\ntests/load-userscript.js loads the real userscript into a Node vm and exposes selected internals.\nImportant suites: providers.test.js, sofascore.test.js, matching.test.js, cache.test.js, byok-quota.test.js, render-states.test.js, security.test.js.\nRun from tests: npm.cmd test",
@@ -1009,13 +1124,15 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Test Harness\n\ntests/load-userscript.js loads the real userscript into a Node vm and exposes selected internals.\nImportant suites: providers.test.js, sofascore.test.js, matching.test.js, cache.test.js, byok-quota.test.js, render-states.test.js, security.test.js.\nRun from tests: npm.cmd test",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aV",
+      "autoResize": true
     },
     {
       "id": "nav-frame",
       "type": "rectangle",
       "x": 90,
-      "y": 530,
+      "y": 520,
       "width": 732,
       "height": 190,
       "angle": 0,
@@ -1028,21 +1145,24 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 3 },
+      "roundness": {
+        "type": 3
+      },
       "seed": 1033,
-      "version": 1,
-      "versionNonce": 103301,
+      "version": 4,
+      "versionNonce": 1080250088,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1782380000000,
+      "updated": 1782395641951,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aW"
     },
     {
       "id": "nav-text",
       "type": "text",
       "x": 122,
-      "y": 552,
+      "y": 542,
       "width": 670,
       "height": 140,
       "angle": 0,
@@ -1057,11 +1177,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1034,
-      "version": 1,
-      "versionNonce": 103401,
+      "version": 4,
+      "versionNonce": 1701540760,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395641951,
       "link": null,
       "locked": false,
       "text": "Where To Start\n\nProvider failed: docs/PROVIDER_NOTES.md -> provider parser -> provider tests.\nWrong match: matching core -> candidate diagnostics -> matching.test.js.\nPanel layout bug: renderers/CSS -> render-states.test.js and manual Torn smoke test.\nQuota/API key issue: BYOK ledger -> api-sports/pandascore/odds settings rows.\nRelease/debug report issue: metadata, buildDebugReport, CHANGELOG.md.",
@@ -1071,13 +1191,15 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Where To Start\n\nProvider failed: docs/PROVIDER_NOTES.md -> provider parser -> provider tests.\nWrong match: matching core -> candidate diagnostics -> matching.test.js.\nPanel layout bug: renderers/CSS -> render-states.test.js and manual Torn smoke test.\nQuota/API key issue: BYOK ledger -> api-sports/pandascore/odds settings rows.\nRelease/debug report issue: metadata, buildDebugReport, CHANGELOG.md.",
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aX",
+      "autoResize": true
     },
     {
       "id": "arrow-provider-match",
       "type": "arrow",
       "x": 20,
-      "y": -35,
+      "y": -60,
       "width": 22,
       "height": 0,
       "angle": 0,
@@ -1090,27 +1212,39 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1035,
-      "version": 1,
-      "versionNonce": 103501,
+      "version": 28,
+      "versionNonce": 618598040,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395627189,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [22, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          22,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aY"
     },
     {
       "id": "arrow-match-cache",
       "type": "arrow",
       "x": 418,
-      "y": -35,
+      "y": -60,
       "width": 24,
       "height": 0,
       "angle": 0,
@@ -1123,25 +1257,39 @@
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": { "type": 2 },
+      "roundness": {
+        "type": 2
+      },
       "seed": 1036,
-      "version": 1,
-      "versionNonce": 103601,
+      "version": 28,
+      "versionNonce": 1733347048,
       "isDeleted": false,
-      "boundElements": null,
-      "updated": 1782380000000,
+      "boundElements": [],
+      "updated": 1782395627189,
       "link": null,
       "locked": false,
-      "points": [[0, 0], [24, 0]],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          24,
+          0
+        ]
+      ],
       "lastCommittedPoint": null,
       "startBinding": null,
       "endBinding": null,
       "startArrowhead": null,
-      "endArrowhead": "arrow"
+      "endArrowhead": "arrow",
+      "index": "aZ"
     }
   ],
   "appState": {
-    "gridSize": null,
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
     "viewBackgroundColor": "#ffffff"
   },
   "files": {}
