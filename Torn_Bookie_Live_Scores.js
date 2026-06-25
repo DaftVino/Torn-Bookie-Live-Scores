@@ -753,6 +753,8 @@
   let latestRenderableMatches = [];
   let detailsResizeListenerBound = false;
   let detailsResizeTimer = null;
+  let lastDetailsTriggerSelector = '';
+  let keyboardInteractionListenerBound = false;
 
   // Provider response cache — key → { data, expiry }
   const providerCache     = new Map();
@@ -1833,6 +1835,64 @@
   function clearActiveDetails() {
     activeDetailsMatchKey = null;
     activeDetailsFallbackMatch = null;
+  }
+
+  function domIdToken(value) {
+    return String(value || 'item')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'item';
+  }
+
+  function getDetailsTriggerSelector(matchKey) {
+    if (!matchKey) return '';
+    const escaped = window.CSS?.escape
+      ? CSS.escape(matchKey)
+      : String(matchKey).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `.tm-bookie-details-btn[data-match-key="${escaped}"]`;
+  }
+
+  function rememberDetailsTriggerFromElement(element, matchKey = '') {
+    if (element?.matches?.('.tm-bookie-details-btn') && element.dataset.matchKey) {
+      lastDetailsTriggerSelector = getDetailsTriggerSelector(element.dataset.matchKey);
+      return;
+    }
+    if (element?.matches?.('.tm-bookie-copy-btn[data-copy-mode="details"]')) {
+      lastDetailsTriggerSelector = '.tm-bookie-copy-btn[data-copy-mode="details"]';
+      return;
+    }
+    if (matchKey) lastDetailsTriggerSelector = getDetailsTriggerSelector(matchKey);
+  }
+
+  function returnFocusToLastDetailsTrigger() {
+    if (!lastDetailsTriggerSelector) return;
+    try {
+      const target = document.querySelector(lastDetailsTriggerSelector);
+      if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
+    } catch (_) {}
+  }
+
+  function closeDetailsAndReturnFocus() {
+    clearActiveDetails();
+    rerenderPanel();
+    setTimeout(returnFocusToLastDetailsTrigger, 0);
+  }
+
+  function ensureKeyboardInteractionListener() {
+    if (keyboardInteractionListenerBound) return;
+    keyboardInteractionListenerBound = true;
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const modal = document.getElementById(DEBUG_REPORT_NOTICE_ID);
+      if (modal) {
+        modal.remove();
+        return;
+      }
+      const det = document.getElementById(DETAILS_ID);
+      if (det && det.style.display !== 'none' && activeDetailsMatchKey) {
+        closeDetailsAndReturnFocus();
+      }
+    });
   }
 
   function makeEnrichment(match) {
@@ -5682,19 +5742,22 @@
         const isCollapsed = isSportGroupCollapsed(sectionType, group.sportKey);
         const caret = isCollapsed ? '▸' : '▾';
         const countLabel = group.matches.length === 1 ? '1 bet' : `${group.matches.length} bets`;
+        const bodyId = `tm-bookie-sport-${domIdToken(sectionType)}-${domIdToken(group.sportKey)}`;
         const groupMatches = sectionType === 'live'
           ? sortLiveMatchesForPins(group.matches)
           : group.matches;
         return `
           <div class="tm-bookie-sport-group" data-section-type="${escapeHtml(sectionType)}" data-sport-key="${escapeHtml(group.sportKey)}">
-            <button class="tm-bookie-sport-header" type="button" data-section-type="${escapeHtml(sectionType)}" data-sport-key="${escapeHtml(group.sportKey)}">
+            <button class="tm-bookie-sport-header" type="button" data-section-type="${escapeHtml(sectionType)}" data-sport-key="${escapeHtml(group.sportKey)}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-controls="${escapeHtml(bodyId)}">
               <span class="tm-bookie-sport-left">
                 <span class="tm-bookie-caret">${caret}</span>
                 <span class="tm-bookie-sport-name">${escapeHtml(group.sportLabel)}</span>
               </span>
               <span class="tm-bookie-sport-count">${escapeHtml(countLabel)}</span>
             </button>
-            ${isCollapsed ? '' : groupMatches.map(renderMatchFn).join('')}
+            <div id="${escapeHtml(bodyId)}" class="tm-bookie-sport-body" ${isCollapsed ? 'hidden' : ''}>
+              ${isCollapsed ? '' : groupMatches.map(renderMatchFn).join('')}
+            </div>
           </div>`;
       }).join('')}`;
   }
@@ -6323,6 +6386,7 @@
       det = document.createElement('div');
       det.id = DETAILS_ID;
       det.className = 'tm-bookie-details';
+      det.tabIndex = -1;
       document.body.appendChild(det);
     }
     return det;
@@ -6438,7 +6502,16 @@
     det.innerHTML = renderDetailsPanel(match);
     const closeBtn = det.querySelector('.tm-det-close');
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => { clearActiveDetails(); rerenderPanel(); });
+      closeBtn.addEventListener('click', closeDetailsAndReturnFocus);
+    }
+    if (!det.dataset.escapeBound) {
+      det.dataset.escapeBound = '1';
+      det.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          closeDetailsAndReturnFocus();
+        }
+      });
     }
     // Delegated once: survives per-section re-renders of the Odds Analysis panel.
     if (!det.dataset.betPullBound) {
@@ -7004,10 +7077,12 @@
     notice.innerHTML = renderDebugReportNotice();
     document.body.appendChild(notice);
     const close = () => notice.remove();
-    notice.querySelector('.tm-bookie-debug-close')?.addEventListener('click', close);
+    const closeButton = notice.querySelector('.tm-bookie-debug-close');
+    closeButton?.addEventListener('click', close);
     notice.addEventListener('click', event => {
       if (event.target === notice) close();
     });
+    setTimeout(() => closeButton?.focus?.({ preventScroll: true }), 0);
   }
 
   // Generic informational modal. Reuses the debug-notice overlay id + CSS so only
@@ -7027,10 +7102,12 @@
       </div>`;
     document.body.appendChild(notice);
     const close = () => notice.remove();
-    notice.querySelector('.tm-bookie-debug-close')?.addEventListener('click', close);
+    const closeButton = notice.querySelector('.tm-bookie-debug-close');
+    closeButton?.addEventListener('click', close);
     notice.addEventListener('click', event => {
       if (event.target === notice) close();
     });
+    setTimeout(() => closeButton?.focus?.({ preventScroll: true }), 0);
   }
 
   function isEsportsSportKey(sportKey) {
@@ -7304,6 +7381,7 @@
 
       activeDetailsFallbackMatch = panelMatch ? null : match;
       activeDetailsMatchKey = makeMatchKey(match);
+      rememberDetailsTriggerFromElement(button, activeDetailsMatchKey);
       rerenderPanel();
 
       if (panelMatch) {
@@ -7358,7 +7436,7 @@
     const detailsTitle = selectedSummary ? 'Open details for selected Torn Bookie game' : 'Open a Torn Bookie game first';
     return `
       <div class="tm-bookie-copy-group">
-        <button class="tm-bookie-copy-header" type="button">
+        <button class="tm-bookie-copy-header" type="button" aria-expanded="${copyToolsCollapsed ? 'false' : 'true'}" aria-controls="tm-bookie-copy-body">
           <span class="tm-bookie-copy-left">
             <span class="tm-bookie-caret">${caret}</span>
             <span class="tm-bookie-copy-name">Tools</span>
@@ -7366,7 +7444,7 @@
           <span class="tm-bookie-copy-hint">${selectedSummary ? 'selected game' : 'no selection'}</span>
         </button>
         ${copyToolsCollapsed ? '' : `
-          <div class="tm-bookie-copy-body">
+          <div class="tm-bookie-copy-body" id="tm-bookie-copy-body">
             ${selectedSummary ? `
               <div class="tm-bookie-selected-summary">
                 <div class="tm-bookie-selected-label">Selected</div>
@@ -7403,6 +7481,47 @@
     return layoutSide === 'left' ? 'left' : 'right';
   }
 
+  function isProviderKeyMissing(providerKey) {
+    if (providerKey === 'apisports') return uiSettings.enabledProviders?.apisports === true && !hasApiSportsKey();
+    if (providerKey === 'pandascore') return uiSettings.enabledProviders?.pandascore === true && !hasPandaScoreToken();
+    return false;
+  }
+
+  function providerHasKnownQuota(providerKey) {
+    if (providerKey === 'apisports') {
+      return Object.keys(latestApiSportsQuota || {}).length > 0
+        || Object.keys(latestByokQuota || {}).some(key => key.startsWith('apisports:') || key.startsWith('apifootball:'));
+    }
+    if (providerKey === 'pandascore') return !!latestPandaQuota || Object.keys(latestByokQuota || {}).some(key => key.startsWith('pandascore:'));
+    return false;
+  }
+
+  function getProviderStatus(providerKey) {
+    if (uiSettings.enabledProviders?.[providerKey] === false) {
+      return { label: 'Disabled', className: 'tm-provider-disabled' };
+    }
+    if (isProviderKeyMissing(providerKey)) {
+      return { label: 'Key missing', className: 'tm-provider-missing' };
+    }
+    if (providerHasKnownQuota(providerKey)) {
+      return { label: 'Quota known', className: 'tm-provider-quota' };
+    }
+    return { label: 'Enabled', className: 'tm-provider-enabled' };
+  }
+
+  function renderProviderStatusChip(providerKey) {
+    const status = getProviderStatus(providerKey);
+    return `<span class="tm-bookie-provider-chip ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>`;
+  }
+
+  function renderKeyStatusLine(label, hasKey, maskedValue = '') {
+    return `
+      <div class="tm-bookie-key-status ${hasKey ? 'tm-key-configured' : 'tm-key-missing'}" role="status">
+        <span>${escapeHtml(label)}</span>
+        <span>${hasKey ? `Configured${maskedValue ? ` - ${maskedValue}` : ''}` : 'Missing'}</span>
+      </div>`;
+  }
+
   function renderSettingsTools() {
     const caret = settingsCollapsed ? '▸' : '▾';
     const settingsHint = `${getThemeDisplayName(uiSettings.theme)} - ${getLayoutDisplayName(uiSettings.layoutSide)}`;
@@ -7410,9 +7529,12 @@
     const unpinTitle = pinnedCount
       ? `Clear ${pinnedCount} pinned live ${pinnedCount === 1 ? 'game' : 'games'}`
       : 'No pinned live games';
+    const apiSportsHasKey = hasApiSportsKey();
+    const pandaScoreHasToken = hasPandaScoreToken();
+    const oddsHasKey = hasOddsApiKey();
     return `
       <div class="tm-bookie-settings-group">
-        <button class="tm-bookie-settings-header" type="button">
+        <button class="tm-bookie-settings-header" type="button" aria-expanded="${settingsCollapsed ? 'false' : 'true'}" aria-controls="tm-bookie-settings-body">
           <span class="tm-bookie-settings-left">
             <span class="tm-bookie-caret">${caret}</span>
             <span class="tm-bookie-settings-name">Settings</span>
@@ -7420,7 +7542,7 @@
           <span class="tm-bookie-settings-hint">${escapeHtml(settingsHint)}</span>
         </button>
         ${settingsCollapsed ? '' : `
-          <div class="tm-bookie-settings-body">
+          <div class="tm-bookie-settings-body" id="tm-bookie-settings-body">
             <div class="tm-bookie-settings-grid">
 
               <div class="tm-bookie-setting-row">
@@ -7460,7 +7582,7 @@
                 </select>
               </div>
 
-              <div>
+              <div class="tm-bookie-settings-panel" id="tm-bookie-settings-display">
                 <div class="tm-bookie-settings-label">Display</div>
                 <div class="tm-bookie-checkbox-grid">
                   <label class="tm-bookie-check"><input type="checkbox" data-setting-key="showLive"               ${uiSettings.showLive               ? 'checked' : ''}> Live scores</label>
@@ -7481,18 +7603,21 @@
                 </div>
               </div>
 
-              <div class="tm-bookie-settings-sports">
+              <div class="tm-bookie-settings-sports tm-bookie-settings-panel" id="tm-bookie-settings-sources">
                 <div class="tm-bookie-settings-label">Score Sources</div>
                 <div class="tm-bookie-checkbox-grid">
                   ${SUPPORTED_PROVIDER_SETTINGS.map(([key, label]) => `
-                    <label class="tm-bookie-check">
-                      <input type="checkbox" data-provider-key="${escapeHtml(key)}" ${uiSettings.enabledProviders?.[key] !== false ? 'checked' : ''}>
-                      ${escapeHtml(label)}
+                    <label class="tm-bookie-check tm-bookie-provider-check">
+                      <span class="tm-bookie-provider-label">
+                        <input type="checkbox" data-provider-key="${escapeHtml(key)}" ${uiSettings.enabledProviders?.[key] !== false ? 'checked' : ''}>
+                        ${escapeHtml(label)}
+                      </span>
+                      ${renderProviderStatusChip(key)}
                     </label>`).join('')}
                 </div>
               </div>
 
-              <div class="tm-bookie-settings-sports">
+              <div class="tm-bookie-settings-sports tm-bookie-settings-panel" id="tm-bookie-settings-sports">
                 <div class="tm-bookie-settings-label">Sports</div>
                 <div class="tm-bookie-checkbox-grid">
                   ${SUPPORTED_SPORT_SETTINGS.map(([key, label]) => `
@@ -7503,7 +7628,7 @@
                 </div>
               </div>
 
-              <div>
+              <div class="tm-bookie-settings-panel" id="tm-bookie-settings-details">
                 <div class="tm-bookie-settings-label">Details Pane Sections</div>
                 <div class="tm-bookie-checkbox-grid">
                   <label class="tm-bookie-check"><input type="checkbox" data-setting-key="showTeamStats"         ${uiSettings.showTeamStats         !== false ? 'checked' : ''}> Team stats</label>
@@ -7513,12 +7638,13 @@
                 </div>
               </div>
 
-              <div class="tm-bookie-settings-odds-block">
+              <div class="tm-bookie-settings-odds-block tm-bookie-settings-panel" id="tm-bookie-settings-api-sports">
                 <div class="tm-bookie-settings-label">API-Sports Scores (soccer / rugby / AFL)</div>
                 <div class="tm-bookie-settings-note">Optional BYOK provider for soccer, rugby, and AFL (fallback after ESPN). Free tier: 100 requests/day. Keys are private; do not enable on shared browsers. Each refetch uses 1 of your 100 daily free requests.</div>
                 ${uiSettings.enabledProviders?.apisports === true ? `
+                  ${renderKeyStatusLine('API-Sports key', apiSportsHasKey, apiSportsHasKey ? maskApiSportsKey(getApiSportsKey()) : '')}
                   <div class="tm-bookie-odds-key-row">
-                    ${hasApiSportsKey() ? `
+                    ${apiSportsHasKey ? `
                       <span class="tm-bookie-odds-key-masked">${escapeHtml(maskApiSportsKey(getApiSportsKey()))}</span>
                       <button class="tm-bookie-apisports-remove-btn" type="button">Remove Key</button>
                     ` : `
@@ -7526,7 +7652,7 @@
                       <button class="tm-bookie-apisports-save-btn" type="button">Save Key</button>
                     `}
                   </div>
-                  ${hasApiSportsKey() ? renderByokQuotaBlock(['apifootball', 'apisports'], 'Not pulled yet') : ''}
+                  ${apiSportsHasKey ? renderByokQuotaBlock(['apifootball', 'apisports'], 'Not pulled yet') : ''}
                   <div class="tm-bookie-apisports-mode-row">
                     <span class="tm-bookie-apisports-mode-label">Refresh</span>
                     <span class="tm-bookie-apisports-mode-pill" aria-label="API-Sports refresh mode">
@@ -7540,12 +7666,13 @@
                 `}
               </div>
 
-              <div class="tm-bookie-settings-odds-block">
+              <div class="tm-bookie-settings-odds-block tm-bookie-settings-panel" id="tm-bookie-settings-pandascore">
                 <div class="tm-bookie-settings-label">Esports Scores (PandaScore)</div>
                 <div class="tm-bookie-settings-note">Optional BYOK provider for Counter-Strike, League of Legends, Dota 2, and Valorant. PandaScore tokens are private; do not enable this on shared browsers.</div>
                 ${uiSettings.enabledProviders?.pandascore === true ? `
+                  ${renderKeyStatusLine('PandaScore token', pandaScoreHasToken, pandaScoreHasToken ? maskPandaScoreToken(getPandaScoreToken()) : '')}
                   <div class="tm-bookie-odds-key-row">
-                    ${hasPandaScoreToken() ? `
+                    ${pandaScoreHasToken ? `
                       <span class="tm-bookie-odds-key-masked">${escapeHtml(maskPandaScoreToken(getPandaScoreToken()))}</span>
                       <button class="tm-bookie-pandascore-remove-btn" type="button">Remove Token</button>
                     ` : `
@@ -7553,13 +7680,13 @@
                       <button class="tm-bookie-pandascore-save-btn" type="button">Save Token</button>
                     `}
                   </div>
-                  ${hasPandaScoreToken() ? renderByokQuotaBlock('pandascore', 'Not pulled yet') : ''}
+                  ${pandaScoreHasToken ? renderByokQuotaBlock('pandascore', 'Not pulled yet') : ''}
                 ` : `
                   <div class="tm-bookie-settings-note">Enable PandaScore under Score Sources to configure a token.</div>
                 `}
               </div>
 
-              <div class="tm-bookie-settings-odds-block">
+              <div class="tm-bookie-settings-odds-block tm-bookie-settings-panel" id="tm-bookie-settings-odds-api">
                 <div class="tm-bookie-settings-label">External Odds (The Odds API)</div>
                 <div class="tm-bookie-checkbox-grid">
                   <label class="tm-bookie-check">
@@ -7568,8 +7695,9 @@
                   </label>
                 </div>
                 ${uiSettings.enableExternalOdds ? `
+                  ${renderKeyStatusLine('The Odds API key', oddsHasKey, oddsHasKey ? maskOddsApiKey(getOddsApiKey()) : '')}
                   <div class="tm-bookie-odds-key-row">
-                    ${hasOddsApiKey() ? `
+                    ${oddsHasKey ? `
                       <span class="tm-bookie-odds-key-masked">${escapeHtml(maskOddsApiKey(getOddsApiKey()))}</span>
                       <button class="tm-bookie-odds-remove-btn" type="button">Remove Key</button>
                     ` : `
@@ -7595,11 +7723,11 @@
                     </select>
                   </div>
                   <div class="tm-bookie-settings-note">Each pull uses ${getOddsPullCost()} credit${getOddsPullCost() === 1 ? '' : 's'} (markets × 1 region). Spreads and totals are mainly available for US sports and books.</div>
-                  ${hasOddsApiKey() ? renderByokQuotaBlock('theoddsapi', 'Not pulled yet') : ''}
+                  ${oddsHasKey ? renderByokQuotaBlock('theoddsapi', 'Not pulled yet') : ''}
                 ` : ''}
               </div>
 
-              <div class="tm-bookie-settings-actions">
+              <div class="tm-bookie-settings-actions tm-bookie-settings-panel" id="tm-bookie-settings-maintenance">
                 <button class="tm-bookie-unpin-all-btn" type="button" ${pinnedCount ? '' : 'disabled'} title="${escapeHtml(unpinTitle)}">Unpin all</button>
                 <button class="tm-bookie-reset-btn" type="button">Reset UI Settings</button>
               </div>
@@ -7772,7 +7900,7 @@
             <span class="tm-bookie-source-list">
               ${renderPoweredBySources(getInitialHeaderSources())}
             </span>
-            <button class="tm-bookie-refresh" title="Refresh now">↻</button>
+            <button class="tm-bookie-refresh" title="Refresh now" aria-label="Refresh scores now">↻</button>
           </div>
         </div>
         <div class="tm-bookie-content">Waiting for Torn data...</div>
@@ -9152,6 +9280,14 @@
   gap: 9px;
 }
 
+#${PANEL_ID} .tm-bookie-settings-panel {
+  padding: 8px 9px;
+  border: 1px solid var(--tm-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tm-bg-3) 72%, transparent);
+  min-width: 0;
+}
+
 #${PANEL_ID} .tm-bookie-setting-row {
   display: grid;
   grid-template-columns: 105px 1fr;
@@ -9166,6 +9302,10 @@
   text-transform: uppercase;
   font-weight: 800;
   letter-spacing: 0.35px;
+}
+
+#${PANEL_ID} .tm-bookie-settings-panel > .tm-bookie-settings-label {
+  margin-bottom: 6px;
 }
 
 #${PANEL_ID} .tm-bookie-setting-row select {
@@ -9196,6 +9336,67 @@
 
 #${PANEL_ID} .tm-bookie-check input {
   accent-color: var(--tm-accent);
+}
+
+#${PANEL_ID} .tm-bookie-provider-check {
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+#${PANEL_ID} .tm-bookie-provider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+#${PANEL_ID} .tm-bookie-provider-chip {
+  flex: none;
+  max-width: 82px;
+  padding: 1px 5px;
+  border: 1px solid var(--tm-border);
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#${PANEL_ID} .tm-provider-enabled,
+#${PANEL_ID} .tm-provider-quota,
+#${PANEL_ID} .tm-key-configured {
+  color: var(--tm-success);
+  border-color: color-mix(in srgb, var(--tm-success) 42%, var(--tm-border));
+  background: var(--tm-success-bg);
+}
+
+#${PANEL_ID} .tm-provider-missing,
+#${PANEL_ID} .tm-key-missing {
+  color: var(--tm-warning);
+  border-color: color-mix(in srgb, var(--tm-warning) 46%, var(--tm-border));
+  background: var(--tm-warning-bg);
+}
+
+#${PANEL_ID} .tm-provider-disabled {
+  color: var(--tm-muted);
+  background: color-mix(in srgb, var(--tm-bg-3) 74%, transparent);
+}
+
+#${PANEL_ID} .tm-bookie-key-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 #${PANEL_ID} .tm-bookie-debug-report-row {
@@ -9429,9 +9630,22 @@
 
 #${PANEL_ID} .tm-bookie-details-btn:focus-visible,
 #${PANEL_ID} .tm-live-pin-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-refresh:focus-visible,
+#${PANEL_ID} .tm-bookie-panel-toggle:focus-visible,
+#${PANEL_ID} .tm-bookie-refresh-mode:focus-visible,
 #${PANEL_ID} .tm-bookie-copy-btn:focus-visible,
 #${PANEL_ID} .tm-bookie-debug-report-btn:focus-visible,
 #${PANEL_ID} .tm-bookie-unpin-all-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-reset-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-odds-save-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-odds-remove-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-pandascore-save-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-pandascore-remove-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-apisports-save-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-apisports-remove-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-apisports-mode:focus-visible,
+#${PANEL_ID} select:focus-visible,
+#${PANEL_ID} input:focus-visible,
 #${PANEL_ID} .tm-bookie-sport-header:focus-visible,
 #${PANEL_ID} .tm-bookie-copy-header:focus-visible,
 #${PANEL_ID} .tm-bookie-settings-header:focus-visible {
@@ -10008,6 +10222,7 @@
         setOddsApiKey(raw);
         input.value = '';
         rerenderPanel();
+        showActionNotice({ type: 'success', title: 'Odds key saved', detail: 'The Odds API key is configured.' });
       });
     }
 
@@ -10017,6 +10232,7 @@
       removeKeyBtn.addEventListener('click', () => {
         removeOddsApiKey();
         rerenderPanel();
+        showActionNotice({ type: 'info', title: 'Odds key removed', detail: 'External odds pulls are still controlled by Settings.' });
       });
     }
 
@@ -10030,6 +10246,7 @@
         setPandaScoreToken(raw);
         input.value = '';
         rerenderPanel();
+        showActionNotice({ type: 'success', title: 'PandaScore token saved', detail: 'Esports score source is configured.' });
       });
     }
 
@@ -10039,6 +10256,7 @@
       removePandaScoreBtn.addEventListener('click', () => {
         removePandaScoreToken();
         rerenderPanel();
+        showActionNotice({ type: 'info', title: 'PandaScore token removed', detail: 'PandaScore will stay inactive until a token is saved.' });
       });
     }
 
@@ -10052,6 +10270,7 @@
         setApiSportsKey(raw);
         input.value = '';
         rerenderPanel();
+        showActionNotice({ type: 'success', title: 'API-Sports key saved', detail: 'API-Sports score source is configured.' });
       });
     }
 
@@ -10061,6 +10280,7 @@
       removeApiSportsBtn.addEventListener('click', () => {
         removeApiSportsKey();
         rerenderPanel();
+        showActionNotice({ type: 'info', title: 'API-Sports key removed', detail: 'API-Sports will stay inactive until a key is saved.' });
       });
     }
 
@@ -10127,6 +10347,7 @@
         e.stopPropagation();
         const key = btn.dataset.matchKey;
         const opening = activeDetailsMatchKey !== key;
+        if (opening) rememberDetailsTriggerFromElement(btn, key);
         activeDetailsFallbackMatch = null;
         activeDetailsMatchKey = opening ? key : null;
         rerenderPanel();
@@ -10197,6 +10418,7 @@
 
   whenBodyReady(() => {
     getOrCreatePanel();
+    ensureKeyboardInteractionListener();
     installCopyToolsSelectionWatcher();
     setTimeout(refreshPanel, 1500);
     setRefreshMode('30s');
