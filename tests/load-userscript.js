@@ -48,7 +48,7 @@ const EXPORT_NAMES = [
   'normalizeStatusToken', 'getStatusTokens', 'isActuallyLive', 'isFinalStatus',
   'getMatchAnchorMs', 'getLiveRecoveryMs',
   // team matching
-  'calcTeamMatchScore', 'matchTeamPair', 'scoreTeamOrientation',
+  'calcTeamMatchScore', 'calcFootballClubMatchScore', 'matchTeamPair', 'scoreTeamOrientation',
   // candidate scoring / selection
   'isGlobalDateSport', 'isCricketMatch', 'hasCompetitionCompatibility',
   'isCandidateTimeCompatible', 'scoreCandidate', 'selectBestCandidate',
@@ -110,7 +110,7 @@ const EXPORT_NAMES = [
   'providerCache', 'inFlightRequests', 'resolvedEventCache', 'enrichmentCache',
   'uiSettings', 'DEFAULT_UI_SETTINGS', 'CONFIDENCE_THRESHOLD',
   'DAY_MS', 'HOUR_MS', 'MINUTE_MS', 'TTL_SUCCESS', 'TTL_ERROR',
-  'TEAM_ALIASES', 'PROVIDER_PRIORITY',
+  'TEAM_ALIASES', 'FOOTBALL_CLUB_ALIAS_GROUPS', 'PROVIDER_PRIORITY',
   'SOURCE_ICONS',
   'SOFASCORE_SPORT_SLUGS', 'LIVESCORE_SPORT_SLUGS', 'THESCORE_SPORT_SLUGS',
   'BBC_SPORT_PATHS', 'PANDASCORE_GAME_SLUGS', 'ESPN_ENDPOINTS', 'TENNIS_LEAGUE_IDS',

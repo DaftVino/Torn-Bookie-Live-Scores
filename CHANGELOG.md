@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Added a football-only club alias and fuzzy-matching upgrade backed by a bundled compact alias list generated from `openfootball/clubs`.
+- Bundled alias data is pinned to commit `ae3800227c449447b3a337fc0aac79a8f02f4c8b`, attributed under `CC0-1.0`, and is not fetched from GitHub at runtime.
+- Added supplemental football alias groups for observed debug failures, including Moroccan variants such as `RSB Berkane`/`RS Berkane`, `FAR Rabat`/`AS FAR Rabat`, `Renaissance Zemamra`, `OC Safi`, `Difaa El Jadida`, `US Touarga`, `KACM`, `CODM Meknes`, and `MAS Fes`.
+- Added football-only pair-level matching guardrails so weak fuzzy matches are accepted only when both teams and orientation fit, while ambiguous one-token aliases such as `united`, `city`, `rangers`, and `real` do not become high-confidence matches by themselves.
+- Added acronym/full-name football matching for names such as `KACM`, `CODM Meknes`, and `MAS Fes`.
+- Reduced SofaScore live-football noise: after a reachable live board returns no confident football match, the script no longer continues into `scheduled-events/YYYY-MM-DD` date-board 404s for that same live match. Upcoming football still uses date boards.
+- Clarified API-Sports/API-Football manual-only diagnostics and added `apiSportsRefreshMode` to debug reports.
+- Added regression coverage for the football alias cases, false-positive guards, SofaScore live-football no-date-board fallback, and API-Football manual-only skip wording.
+
 ## Torn Bookie Live Scores v2.5.8 - 2026-06-24
 
 - Added themed action notices for copy, details, debug report, fallback, and error feedback.

@@ -167,6 +167,44 @@ test('SofaScore live football uses events/live before the date schedule endpoint
   assert.equal(result.providerEventId, 123);
 });
 
+test('SofaScore live football no-match does not fall through to scheduled-events', async () => {
+  const a = loadUserscript({
+    gmXmlhttpRequest: (req) => {
+      const body = req.url.endsWith('/events/live')
+        ? {
+            events: [{
+              id: 456,
+              startTimestamp: Math.floor(Date.UTC(2026, 5, 22, 18, 0, 0) / 1000),
+              homeTeam: { name: 'Wrong Home' },
+              awayTeam: { name: 'Wrong Away' },
+              homeScore: { current: 0 },
+              awayScore: { current: 0 },
+              status: { code: 9, description: '1st half', type: 'inprogress' },
+              tournament: { name: 'Test League' }
+            }]
+          }
+        : { events: [] };
+      return {
+        type: 'load',
+        response: { status: 200, responseText: JSON.stringify(body), responseHeaders: '' }
+      };
+    }
+  });
+  a.__resetCaches();
+
+  const result = await a._findSofascore(makeMatch({
+    sectionType: 'live',
+    status: '1st half',
+    rawStatus: 'inprogress',
+    startTimestamp: String(Date.UTC(2026, 5, 22, 18, 0, 0))
+  }));
+
+  assert.equal(result.found, false);
+  assert.equal(a.__control.gmRequests.length, 1);
+  assert.ok(a.__control.gmRequests[0].url.endsWith('/api/v1/sport/football/events/live'));
+  assert.ok(a.__control.gmRequests.every(req => !req.url.includes('/scheduled-events/')));
+});
+
 test('SofaScore non-live football keeps the date schedule endpoint', async () => {
   const a = loadUserscript({
     gmXmlhttpRequest: () => ({

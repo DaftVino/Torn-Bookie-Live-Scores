@@ -114,6 +114,43 @@ test('FIXED: legitimate neutral-affix containment still scores 80', () => {
   assert.equal(a.calcTeamMatchScore('Real Madrid CF', 'Real Madrid'), 80);
 });
 
+test('football club aliases are generated from openfootball data', () => {
+  assert.ok(a.FOOTBALL_CLUB_ALIAS_GROUPS.length > 2000);
+  assert.equal(a.calcTeamMatchScore('RSB Berkane', 'RS Berkane'), 35);
+  assert.equal(a.calcFootballClubMatchScore('RSB Berkane', 'RS Berkane'), 95);
+  assert.equal(a.calcFootballClubMatchScore('FAR Rabat', 'AS FAR Rabat'), 95);
+  assert.equal(a.calcFootballClubMatchScore('MAS Fes', 'Maghreb AS de Fès'), 95);
+});
+
+test('football fuzzy aliases resolve debug-report Moroccan club variants', () => {
+  const cases = [
+    ['RSB Berkane', 'FAR Rabat', 'RS Berkane', 'AS FAR Rabat'],
+    ['Renaissance Club Zemamra', 'Olympic Club de Safi', 'RCA Zemamra', 'OC Safi'],
+    ['Renaissance Club Zemamra', 'Olympic Club de Safi', 'Renaissance Zemamra', 'Olympique Safi'],
+    ['Union Touarga Sport', 'Difaa El Jadida', 'US Touarga', 'Difaâ Hassani El-Jadidi']
+  ];
+  for (const [team1, team2, home, away] of cases) {
+    const pair = a.matchTeamPair({ team1, team2, sportKey: 'football' }, home, away);
+    assert.equal(pair.team1IsHome, true, `${team1} / ${team2}`);
+    assert.ok(pair.confidence >= a.CONFIDENCE_THRESHOLD, `${team1} / ${team2}`);
+  }
+});
+
+test('football acronym aliases resolve compact provider names', () => {
+  assert.equal(a.calcFootballClubMatchScore('KACM', 'Kawkab Athletic Club Marrakech'), 95);
+  assert.equal(a.calcFootballClubMatchScore('CODM Meknes', 'Club Omnisports De Meknès'), 95);
+  assert.equal(a.calcFootballClubMatchScore('FUS Rabat', 'Fath Union Sport Rabat'), 95);
+});
+
+test('football alias fallback keeps obvious false positives below threshold', () => {
+  assert.equal(a.calcFootballClubMatchScore('Manchester United', 'Manchester City'), 0);
+  assert.ok(
+    a.matchTeamPair({ team1: 'Manchester United', team2: 'Arsenal', sportKey: 'football' }, 'Manchester City', 'Arsenal').confidence < a.CONFIDENCE_THRESHOLD
+  );
+  assert.equal(a.calcFootballClubMatchScore('United', 'United FC'), 0);
+  assert.equal(a.calcFootballClubMatchScore('City', 'City FC'), 0);
+});
+
 test('calcTeamMatchScore: distinct same-league teams stay below threshold', () => {
   assert.ok(a.calcTeamMatchScore('Manchester United', 'Manchester City') < 60);
 });

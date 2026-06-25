@@ -1,5 +1,38 @@
 # Last Debug Capture
 
+## Football Alias And Fuzzy Matching Upgrade (2026-06-25)
+
+**Issue**: New football debug reports showed provider candidates that were clearly the same fixtures, but team names differed enough that existing matching rejected them. Examples included `RSB Berkane v FAR Rabat` versus `RS Berkane v AS FAR Rabat`, `Renaissance Club Zemamra v Olympic Club de Safi` versus `RCA/Renaissance Zemamra v Olympique/OC Safi`, and `Union Touarga Sport v Difaa El Jadida` versus `US Touarga v Difaa Hassani El-Jadidi`.
+
+**Root Cause**: The previous global team-name matcher was intentionally conservative and did not have broad football club alias knowledge. Provider football feeds commonly drop legal words, abbreviate clubs, use alternate transliterations, or expose acronyms. A direct fuzzy-only approach would have been too risky because one-word football aliases are often ambiguous.
+
+**Fix Applied**:
+- Added a bundled compact football alias source generated from `openfootball/clubs`, pinned to commit `ae3800227c449447b3a337fc0aac79a8f02f4c8b` and attributed under `CC0-1.0`.
+- No runtime GitHub fetch was added. This avoids a new `@connect`, avoids new privacy disclosure scope for GitHub traffic, and avoids GitHub rate-limit/offline failures.
+- Regenerated the data after finding that inline comments and broad one-token names could accidentally merge unrelated clubs. The generated data now strips inline comments/language suffixes and does not merge groups through ambiguous one-token aliases.
+- Added supplement alias groups for observed provider spellings not covered cleanly by the generated data.
+- Added football-only matching helpers for same alias-group matches, acronym/full-name bridges, and bounded fuzzy token matches.
+- Added pair-level football orientation checks so a slightly weak name can pass only when the other team and orientation also fit. Close reverse-orientation candidates are treated as ambiguous instead of guessed.
+- Kept the existing global matching behavior conservative for non-football sports.
+
+**SofaScore behavior changed in the same repair**:
+- Live football still queries `/api/v1/sport/football/events/live` first.
+- If that live board is reachable but no confident match is found, the lookup does not continue into `scheduled-events/YYYY-MM-DD` date boards for that same live match.
+- Upcoming/non-live football still uses scheduled-events date boards.
+
+**Regression coverage added**:
+- Moroccan debug-report failures: `RSB Berkane`, `FAR Rabat`, `Renaissance/Zemamra`, `Olympic/Olympique/OC Safi`, `Union Touarga`, and `Difaa El Jadida`.
+- Acronym cases: `KACM`, `CODM Meknes`, `MAS Fes`.
+- False-positive guards: `Manchester United` must not match `Manchester City`; ambiguous one-token aliases must not auto-match; existing `Mexico`/`New Mexico`, youth/reserve, and generic-token guards remain below threshold.
+- SofaScore live football no-match after a successful live board must not request scheduled-events.
+
+**Verified**:
+- `node --check Torn_Bookie_Live_Scores.js`
+- `node --test tests\matching.test.js tests\sofascore.test.js tests\apifootball.test.js`
+- `node --test tests\*.test.js`
+
+---
+
 ## Live Football Live Board Fix (2026-06-25)
 
 **Issue**: Live football matches like `Grobina v Auda` were not found when SofaScore was queried.
@@ -17,8 +50,8 @@
   - SofaScore HTTP 404 on scheduled-events does not trigger token refresh (normal endpoint failure).
 
 **Fallback chain now**:
-- Live football: SofaScore live board → SofaScore date boards → API-Football (if enabled) → BBC
-- Upcoming football: SofaScore date boards → API-Football (if enabled) → BBC (unchanged)
+- Live football: SofaScore live board, then later providers. It does not fall through to SofaScore date boards after a reachable live board no-match.
+- Upcoming football: SofaScore date boards -> API-Football (if enabled) -> BBC (unchanged)
 
 **Quota Impact**: None. SofaScore is a free public API; no API-Football BYOK calls are made for live football (matching the existing design for tennis).
 

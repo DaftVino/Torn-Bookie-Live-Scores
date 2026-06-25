@@ -323,7 +323,7 @@ test('API-Football provider errors include parser diagnostics and do not throw',
   assert.ok(!JSON.stringify(result.parserDiagnostics).includes('quota reached'), 'diagnostics must not include raw provider error text');
 });
 
-test('API-Football manual-mode cache skip reports not requested with diagnostics', async () => {
+test('API-Football manual-mode cache skip reports intentional skip with diagnostics', async () => {
   let requestCount = 0;
   const a = loadUserscript({
     gmXmlhttpRequest: () => {
@@ -341,7 +341,7 @@ test('API-Football manual-mode cache skip reports not requested with diagnostics
   }));
 
   assert.equal(requestCount, 0);
-  assert.match(result.detail, /manual mode cache-only; not requested/);
+  assert.match(result.detail, /skipped by Manual-only refresh mode/);
   assert.equal(result.parserDiagnostics[0].providerName, 'API-Football');
   assert.equal(result.parserDiagnostics[0].networkRequested, false);
   assert.equal(result.parserDiagnostics[0].manualSuppressed, true);

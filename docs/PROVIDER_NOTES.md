@@ -25,7 +25,7 @@ Representative effective ladders with an API-Sports key configured:
 
 ```text
 Live tennis: SofaScore live board -> ESPN tennis date board
-Live football: SofaScore live board -> ESPN soccer date board (if primary) -> SofaScore date board -> API-Football
+Live football: SofaScore live board -> ESPN soccer date board (if primary) -> API-Football
 World Cup / mapped ESPN soccer: ESPN -> SofaScore -> API-Football
 Unmapped soccer: SofaScore -> API-Football
 Rugby union: SofaScore -> API-Sports -> LiveScore
@@ -159,7 +159,9 @@ https://www.sofascore.com/api/v1/sport/tennis/events/live
 https://www.sofascore.com/api/v1/sport/football/events/live
 ```
 
-Live tennis and live football must use the live board before the date-board plan. The date-board tennis endpoint returned HTTP 404 in the 2026-06-25 reports, while the live board returned HTTP 200 and resolved all 10 live tennis rows, including Plovdiv and Targu Mures Challenger matches. Similarly, live football matches are available on the live board endpoint when date-board scheduled-events endpoints return 404. Non-live/upcoming tennis and football continue to use the date-board plan.
+Live tennis and live football must use the live board before the date-board plan. The date-board tennis endpoint returned HTTP 404 in the 2026-06-25 reports, while the live board returned HTTP 200 and resolved all 10 live tennis rows, including Plovdiv and Targu Mures Challenger matches. Similarly, live football matches are available on the live board endpoint when date-board scheduled-events endpoints return 404.
+
+Live football has an additional noise guard: if the live board is reachable but no confident football match is found, do not continue into SofaScore `scheduled-events/YYYY-MM-DD` date-board requests for that same live match. This prevents avoidable 404/debug noise after the correct live endpoint has already been checked. Non-live/upcoming football continues to use the date-board plan.
 
 SofaScore is still wired in the current code. It is a free provider, but it is token-sensitive: requests require an `x-requested-with` token. The script stores the latest captured token, uses it in score/H2H requests, and can refresh it through a background SofaScore tab after a token rejection.
 
@@ -187,9 +189,50 @@ Regression guardrails:
 - keep `SofaScore live tennis uses events/live before the date schedule endpoint`,
 - keep `SofaScore non-live tennis keeps the date schedule endpoint`,
 - keep `SofaScore live football uses events/live before the date schedule endpoint`,
+- keep `SofaScore live football no-match after a successful live board does not request scheduled-events`,
 - keep `SofaScore non-live football keeps the date schedule endpoint`,
 - keep `SofaScore 404 reports endpoint failure without token refresh`,
 - keep ESPN tennis grouped/date-only parser tests.
+
+## Football Matching
+
+Football has a dedicated alias/fuzzy layer on top of the generic team-name matcher. It is intentionally football-only; do not relax the global matcher for other sports based on football provider behavior.
+
+Alias data source:
+
+```text
+openfootball/clubs
+Pinned commit: ae3800227c449447b3a337fc0aac79a8f02f4c8b
+License: CC0-1.0
+Runtime fetch: none
+```
+
+The data is bundled as compact alias groups and expanded lazily in memory. GitHub is used only for attribution/update provenance, not as a runtime provider. This preserves the current `@connect` and privacy boundary.
+
+Generation details worth preserving:
+
+- strip inline `##` comments and language suffixes such as `[de]`,
+- keep alias groups compact rather than a fully expanded object,
+- do not merge groups through ambiguous one-token aliases,
+- supplement generated data with observed provider spellings when needed.
+
+High-confidence football alias matches are allowed only when the alias is not ambiguous and both names resolve to the same club group. Ambiguous one-token aliases such as `united`, `city`, `rangers`, `real`, `union`, and similar generic names must not auto-match by themselves.
+
+Football also has bounded fallback matching for:
+
+- acronym/full-name bridges, for example `KACM` to `Kawkab Athletic Club Marrakech`,
+- short acronym plus locality forms, for example `CODM Meknes`,
+- dropped/variant words, for example `Olympic Club de Safi` to `Olympique Safi`.
+
+Pair-level orientation is part of the acceptance rule. A weak football fuzzy match can pass only when both teams clear the bounded floor and the winning orientation beats the reverse orientation by a margin. Close bidirectional candidates should remain ambiguous and fall through.
+
+Regression guardrails:
+
+- keep Moroccan debug-report alias tests for Berkane/Rabat, Zemamra/Safi, and Touarga/El Jadida,
+- keep acronym tests for KACM, CODM Meknes, and MAS Fes,
+- keep false-positive guards such as `Manchester United` versus `Manchester City`,
+- keep generic-token, youth/reserve, and `Mexico` versus `New Mexico` tests below threshold,
+- keep tests proving ambiguous openfootball aliases do not become automatic high-confidence matches.
 
 ## API-Sports And API-Football
 
@@ -227,6 +270,8 @@ Free-tier notes from prior probes:
 - manual-only mode is the default to avoid unexpected quota use.
 
 Response envelopes must check `errors` before mapping `response[]`.
+
+Manual-only cache skips should be reported as `skipped by Manual-only refresh mode` so users can distinguish expected quota protection from provider/parser failure. Debug reports include `apiSportsRefreshMode`.
 
 ## LiveScore And TheScore
 
