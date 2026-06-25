@@ -745,6 +745,7 @@
   let activeDetailsMatchKey  = null;
   let activeDetailsFallbackMatch = null;
   let lastCopyReceipt = null;
+  let pinnedLiveMatchKeys = [];
   let lastCopyToolsSelectionSignature = '';
   let copyToolsSelectionWatcherBound = false;
   let latestRenderableMatches = [];
@@ -1776,6 +1777,47 @@
 
   function findMatchByKey(key) {
     return latestRenderableMatches.find(m => makeMatchKey(m) === key) || null;
+  }
+
+  function getPinnedLiveMatchIndex(matchKey) {
+    return pinnedLiveMatchKeys.indexOf(matchKey);
+  }
+
+  function isLiveMatchPinned(match) {
+    if (!match || match.sectionType !== 'live') return false;
+    const matchKey = makeMatchKey(match);
+    return !!matchKey && getPinnedLiveMatchIndex(matchKey) !== -1;
+  }
+
+  function toggleLiveMatchPin(matchKey) {
+    if (!matchKey) return null;
+    const index = getPinnedLiveMatchIndex(matchKey);
+    const match = findMatchByKey(matchKey);
+    if (index === -1) {
+      pinnedLiveMatchKeys.push(matchKey);
+      return { pinned: true, match };
+    }
+    pinnedLiveMatchKeys.splice(index, 1);
+    return { pinned: false, match };
+  }
+
+  function clearPinnedLiveMatches() {
+    const count = pinnedLiveMatchKeys.length;
+    pinnedLiveMatchKeys = [];
+    return count;
+  }
+
+  function sortLiveMatchesForPins(matches) {
+    return [...matches].sort((a, b) => {
+      const aPin = getPinnedLiveMatchIndex(makeMatchKey(a));
+      const bPin = getPinnedLiveMatchIndex(makeMatchKey(b));
+      const aPinned = aPin !== -1;
+      const bPinned = bPin !== -1;
+      if (aPinned && bPinned) return aPin - bPin;
+      if (aPinned) return -1;
+      if (bPinned) return 1;
+      return 0;
+    });
   }
 
   function getActiveDetailsMatch() {
@@ -5530,6 +5572,7 @@
       matchKey,
       isTornSelected: !!(selectedSummary?.matchKey && selectedSummary.matchKey === matchKey),
       isDetailsActive: activeDetailsMatchKey === matchKey,
+      isPinned: isLiveMatchPinned(match),
       isUnmatched,
       statusKind,
       sourceLabel: match.score?.sourceLabel || match.sourceLabel || '',
@@ -5556,8 +5599,15 @@
     const classes = [...baseClasses];
     if (rowState.isTornSelected) classes.push('tm-row-selected');
     if (rowState.isDetailsActive) classes.push('tm-row-details-active');
+    if (rowState.isPinned) classes.push('tm-row-pinned');
     if (rowState.isUnmatched) classes.push('tm-row-unmatched');
     return classes.join(' ');
+  }
+
+  function renderLivePinButton(match, rowState) {
+    if (!rowState.matchKey) return '';
+    const title = `${rowState.isPinned ? 'Unpin' : 'Pin'} ${match.name || 'live match'}`;
+    return `<button class="tm-live-pin-btn${rowState.isPinned ? ' is-pinned' : ''}" type="button" data-match-key="${escapeHtml(rowState.matchKey)}" aria-pressed="${rowState.isPinned ? 'true' : 'false'}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">📌</button>`;
   }
 
   function renderDetailsButton(match, rowState) {
@@ -5571,6 +5621,7 @@
     const metaParts = [match.sport, match.stage];
     const rowState = getMatchRowState(match, selectedSummary);
     if (uiSettings.showSourceInRows) metaParts.push(rowState.sourceLabel);
+    const pinBtn = renderLivePinButton(match, rowState);
     const detailsBtn = renderDetailsButton(match, rowState);
     const pillHtml = renderMatchStatusPills(match, rowState);
     const rowClasses = getMatchRowClassNames(['tm-bookie-row', 'tm-bookie-live-row'], rowState);
@@ -5583,7 +5634,7 @@
             <div class="tm-bookie-title tm-bookie-live-title">${escapeHtml(match.name)}</div>
             ${pillHtml}
           </div>
-          ${detailsBtn}
+          <div class="tm-bookie-row-actions">${pinBtn}${detailsBtn}</div>
         </div>
         ${scoreHtml}
         <div class="tm-bookie-meta">${escapeHtml(metaParts.filter(Boolean).join(' - '))}</div>
@@ -5610,7 +5661,7 @@
             <div class="tm-bookie-title">${escapeHtml(match.name)}</div>
             ${pillHtml}
           </div>
-          ${detailsBtn}
+          <div class="tm-bookie-row-actions">${detailsBtn}</div>
         </div>
         <div class="tm-bookie-meta">${escapeHtml(metaParts.filter(Boolean).join(' - '))}</div>
         <div class="tm-bookie-status-line">
@@ -5629,6 +5680,9 @@
         const isCollapsed = isSportGroupCollapsed(sectionType, group.sportKey);
         const caret = isCollapsed ? '▸' : '▾';
         const countLabel = group.matches.length === 1 ? '1 bet' : `${group.matches.length} bets`;
+        const groupMatches = sectionType === 'live'
+          ? sortLiveMatchesForPins(group.matches)
+          : group.matches;
         return `
           <div class="tm-bookie-sport-group" data-section-type="${escapeHtml(sectionType)}" data-sport-key="${escapeHtml(group.sportKey)}">
             <button class="tm-bookie-sport-header" type="button" data-section-type="${escapeHtml(sectionType)}" data-sport-key="${escapeHtml(group.sportKey)}">
@@ -5638,7 +5692,7 @@
               </span>
               <span class="tm-bookie-sport-count">${escapeHtml(countLabel)}</span>
             </button>
-            ${isCollapsed ? '' : group.matches.map(renderMatchFn).join('')}
+            ${isCollapsed ? '' : groupMatches.map(renderMatchFn).join('')}
           </div>`;
       }).join('')}`;
   }
@@ -7312,6 +7366,10 @@
   function renderSettingsTools() {
     const caret = settingsCollapsed ? '▸' : '▾';
     const settingsHint = `${getThemeDisplayName(uiSettings.theme)} - ${getLayoutDisplayName(uiSettings.layoutSide)}`;
+    const pinnedCount = pinnedLiveMatchKeys.length;
+    const unpinTitle = pinnedCount
+      ? `Clear ${pinnedCount} pinned live ${pinnedCount === 1 ? 'game' : 'games'}`
+      : 'No pinned live games';
     return `
       <div class="tm-bookie-settings-group">
         <button class="tm-bookie-settings-header" type="button">
@@ -7502,6 +7560,7 @@
               </div>
 
               <div class="tm-bookie-settings-actions">
+                <button class="tm-bookie-unpin-all-btn" type="button" ${pinnedCount ? '' : 'disabled'} title="${escapeHtml(unpinTitle)}">Unpin all</button>
                 <button class="tm-bookie-reset-btn" type="button">Reset UI Settings</button>
               </div>
             </div>
@@ -7552,6 +7611,7 @@
     bindSportGroupButtons();
     bindCopyTools();
     bindSettingsTools();
+    bindLivePinButtons();
     updateRefreshButtons();
     bindDetailsButtons();
     updateDetailsPanel();
@@ -8464,6 +8524,15 @@
   box-shadow: inset 4px 0 0 var(--tm-accent);
 }
 
+#${PANEL_ID} .tm-bookie-row.tm-row-pinned {
+  box-shadow: inset 3px 0 0 var(--tm-warning);
+}
+
+#${PANEL_ID} .tm-bookie-row.tm-row-pinned.tm-row-selected,
+#${PANEL_ID} .tm-bookie-row.tm-row-pinned.tm-row-details-active {
+  box-shadow: inset 4px 0 0 var(--tm-accent), inset 7px 0 0 color-mix(in srgb, var(--tm-warning) 46%, transparent);
+}
+
 #${PANEL_ID} .tm-bookie-row.tm-row-selected.tm-row-details-active {
   box-shadow: inset 4px 0 0 var(--tm-accent), inset 7px 0 0 color-mix(in srgb, var(--tm-info) 46%, transparent);
 }
@@ -9030,11 +9099,13 @@
 
 #${PANEL_ID} .tm-bookie-settings-actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 2px;
 }
 
-#${PANEL_ID} .tm-bookie-reset-btn {
+#${PANEL_ID} .tm-bookie-reset-btn,
+#${PANEL_ID} .tm-bookie-unpin-all-btn {
   border: 1px solid var(--tm-border-2);
   background: var(--tm-bg-3);
   color: var(--tm-text);
@@ -9045,9 +9116,15 @@
   font-family: var(--tm-font);
 }
 
-#${PANEL_ID} .tm-bookie-reset-btn:hover {
+#${PANEL_ID} .tm-bookie-reset-btn:hover:not(:disabled),
+#${PANEL_ID} .tm-bookie-unpin-all-btn:hover:not(:disabled) {
   background: var(--tm-hover);
   border-color: var(--tm-accent);
+}
+
+#${PANEL_ID} .tm-bookie-unpin-all-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 #${DEBUG_REPORT_NOTICE_ID} {
@@ -9137,7 +9214,15 @@
   margin-bottom: 0;
 }
 
-#${PANEL_ID} .tm-bookie-details-btn {
+#${PANEL_ID} .tm-bookie-row-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+#${PANEL_ID} .tm-bookie-details-btn,
+#${PANEL_ID} .tm-live-pin-btn {
   flex-shrink: 0;
   background: none;
   border: 1px solid var(--tm-border);
@@ -9150,11 +9235,23 @@
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
+#${PANEL_ID} .tm-live-pin-btn {
+  width: 23px;
+  min-width: 23px;
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
 #${PANEL_ID} .tm-bookie-details-btn:hover,
-#${PANEL_ID} .tm-bookie-details-btn.tm-details-active {
+#${PANEL_ID} .tm-bookie-details-btn.tm-details-active,
+#${PANEL_ID} .tm-live-pin-btn:hover,
+#${PANEL_ID} .tm-live-pin-btn.is-pinned {
   background: var(--tm-accent);
   border-color: var(--tm-accent);
   color: #fff;
+  opacity: 1;
 }
 
 #${PANEL_ID} .tm-row-details-active .tm-bookie-details-btn.tm-details-active {
@@ -9162,8 +9259,10 @@
 }
 
 #${PANEL_ID} .tm-bookie-details-btn:focus-visible,
+#${PANEL_ID} .tm-live-pin-btn:focus-visible,
 #${PANEL_ID} .tm-bookie-copy-btn:focus-visible,
 #${PANEL_ID} .tm-bookie-debug-report-btn:focus-visible,
+#${PANEL_ID} .tm-bookie-unpin-all-btn:focus-visible,
 #${PANEL_ID} .tm-bookie-sport-header:focus-visible,
 #${PANEL_ID} .tm-bookie-copy-header:focus-visible,
 #${PANEL_ID} .tm-bookie-settings-header:focus-visible {
@@ -9761,6 +9860,43 @@
       resetButton.dataset.bound = '1';
       resetButton.addEventListener('click', () => resetUiSettings());
     }
+
+    const unpinAllButton = panel.querySelector('.tm-bookie-unpin-all-btn');
+    if (unpinAllButton && unpinAllButton.dataset.bound !== '1') {
+      unpinAllButton.dataset.bound = '1';
+      unpinAllButton.addEventListener('click', () => {
+        const clearedCount = clearPinnedLiveMatches();
+        rerenderPanel();
+        if (clearedCount) {
+          showActionNotice({
+            type: 'success',
+            title: 'Live pins cleared',
+            detail: `Unpinned ${clearedCount} live ${clearedCount === 1 ? 'game' : 'games'}.`
+          });
+        }
+      });
+    }
+  }
+
+  function bindLivePinButtons() {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return;
+
+    panel.querySelectorAll('.tm-live-pin-btn').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        const result = toggleLiveMatchPin(button.dataset.matchKey);
+        if (!result) return;
+        rerenderPanel();
+        showActionNotice({
+          type: result.pinned ? 'success' : 'info',
+          title: result.pinned ? 'Live game pinned' : 'Live game unpinned',
+          detail: result.match?.name || 'Live game'
+        });
+      });
+    });
   }
 
   function bindDetailsButtons() {
