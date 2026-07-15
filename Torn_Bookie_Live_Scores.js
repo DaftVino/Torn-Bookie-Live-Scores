@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Bookie Live Scores
 // @namespace    https://github.com/DaftVino/Torn-Bookie-Live-Scores
-// @version      3.0.0
-// @description  Shows a configurable right/left-side panel with live/upcoming Torn Bookie bets grouped by sport, with live scores from ESPN, ESPNcricinfo, API-Football/API-Sports (BYOK), SofaScore, LiveScore, TheScore, BBC Sport, and optional BYOK PandaScore esports support via staged per-match fallback with confidence matching, TTL caching, and request coalescing. Includes a progressive enrichment details pane (NHL stats, BYOK odds, expected outcome, commentary), copy tools for pasting full betting details in external applications, five themes, provider toggles, and debug mode while in testing. Please enable debug mode in settings, copy report and paste output from script in any error feedback to help resolve issues faster. NOT COMPATIBLE WITH TORN PDA.
+// @version      3.1.0
+// @description  Adds a panel to the Torn Bookie page showing your live and upcoming bets grouped by sport, each matched to live scores from public providers (ESPN, SofaScore, LiveScore, TheScore, BBC Sport, ESPNcricinfo) via staged per-match fallback with confidence matching and caching. Optional BYOK keys add API-Football, odds, and PandaScore esports. Includes a details pane, copy tools, themes, and debug mode. Works in Torn PDA. Enable debug mode and include the report in any bug feedback.
 // @author       DaftVino
 // @license      MIT
 // @match        https://www.torn.com/page.php?sid=bookie*
@@ -73,7 +73,9 @@
   const DETAILS_ID  = 'tm-bookie-details-popout';
   const DEBUG_REPORT_NOTICE_ID = 'tm-bookie-debug-report-notice';
   const SETTINGS_KEY = 'tmBookieScoresUiSettings';
-  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.5.8';
+  // Fallback must match @version. Torn PDA is not Tampermonkey and may not provide GM_info,
+  // so this is the value its debug reports carry. metadata.test.js pins the two together.
+  const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '3.1.0';
   const SCRIPT_NAMESPACE = 'https://greasyfork.org/users/daftvino';
 
   const PANEL_WIDTH   = 360;  // must match #PANEL_ID width in CSS
@@ -259,6 +261,31 @@
   function isSofascoreContext() {
     try { return location.hostname === 'www.sofascore.com' || location.hostname === 'sofascore.com'; }
     catch (_) { return false; }
+  }
+
+  // Torn PDA does not honour @match (torn-pda#314) and injects this script on every
+  // Torn page, so page scoping is enforced at runtime rather than by the metadata block.
+  // This predicate decides whether the fetch/XHR interception below installs, so it must
+  // be at least as strict as the @match it stands in for
+  // (https://www.torn.com/page.php?sid=bookie*): hostname AND path AND sid. Checking sid
+  // alone is not enough — torn.com/city.php?sid=bookie is a URL anyone can hand a PDA
+  // user, and it would remount the panel on the very pages this gate exists to keep clear.
+  // `search` is injectable for tests — the early return below prevents the harness from
+  // exporting anything on a non-Bookie location, so false cases are otherwise untestable.
+  function isBookiePageContext(search) {
+    try {
+      const host = location.hostname;
+      if (host !== 'www.torn.com' && host !== 'torn.com') return false;
+      if (location.pathname !== '/page.php') return false;
+      const query = search !== undefined ? search : location.search;
+      return new URLSearchParams(query).get('sid') === 'bookie';
+    } catch (err) {
+      // Fail closed, but never silently: if this throws, the script goes inert everywhere
+      // including the Bookie page, and the panel that would carry a debug report never
+      // mounts. A console warning is the only diagnostic left.
+      try { console.warn('[TBLS] page-context check failed, script inert:', err); } catch (_) {}
+      return false;
+    }
   }
 
   function isSofascoreTokenRefreshContext() {
@@ -1533,6 +1560,16 @@
     installSofascoreTokenCapture();
     return;
   }
+
+  // Off the Bookie page there is nothing to show: capturedBookieData only ever comes from
+  // sid=bookieApi responses on the Bookie page, and Torn section navigation is a real page
+  // load, so no state survives to render. Returning here skips the fetch/XHR interception,
+  // the global error listeners, the panel mount, and the refresh loop.
+  //
+  // Everything above this line is declarations, except loadUiSettings() (a localStorage
+  // read) — so this return leaves no network, timers, listeners, or DOM behind. Keep it
+  // that way: work added above this line runs on every Torn page PDA injects into.
+  if (!isBookiePageContext()) return;
 
   const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
@@ -8242,8 +8279,9 @@
   position: fixed;
   top: ${PANEL_TOP}px;
   right: ${EDGE_GAP}px;
-  width: ${PANEL_WIDTH}px;
+  width: min(${PANEL_WIDTH}px, calc(100vw - ${EDGE_GAP * 2}px));
   max-height: calc(100vh - 150px);
+  max-height: calc(100dvh - 150px);
   z-index: 999999;
   display: flex;
   flex-direction: column;
@@ -8668,6 +8706,34 @@
 
 #${PANEL_ID}.tm-layout-left.tm-bookie-panel-hidden .tm-bookie-panel-toggle {
   border-radius: 0 6px 6px 0;
+}
+
+/* Fill the viewport on phones. min() above only prevents overflow; on a ~390px screen it
+   still resolves to ${PANEL_WIDTH}px and leaves a dead sliver, so narrow screens override
+   the width outright. Kept separate from TOAST_MOBILE_MAX_WIDTH (${TOAST_MOBILE_MAX_WIDTH}px)
+   on purpose: the toast works today and is not retuned here. */
+@media (max-width: 480px) {
+  #${PANEL_ID} {
+    width: calc(100vw - ${EDGE_GAP * 2}px);
+  }
+}
+
+/* Touch devices get >=44px hit areas. min-width/min-height clamp the used value of
+   width/height unconditionally, so source order against the rules above is irrelevant.
+   This visibly enlarges the collapsed toggle and grows the refresh pill, which has no
+   fixed height — intended, not an invisible tap zone. */
+@media (pointer: coarse) {
+  #${PANEL_ID} .tm-bookie-panel-toggle,
+  #${PANEL_ID}.tm-bookie-panel-hidden .tm-bookie-panel-toggle {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  #${PANEL_ID} .tm-bookie-refresh-mode {
+    min-height: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
 }
 
 #${PANEL_ID}.tm-bookie-panel-hidden .tm-bookie-header-title,

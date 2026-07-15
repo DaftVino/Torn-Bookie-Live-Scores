@@ -11,7 +11,14 @@ Userscript version reviewed: `3.0.0`
 4. If the panel says it is waiting for data, refresh the Bookie page.
 5. Open Settings and confirm the sport and provider you expect are enabled.
 
-Torn PDA is not supported.
+## Torn PDA
+
+Supported as of v3.1.0. See [TORN_PDA.md](TORN_PDA.md) for the full notes.
+
+- **Panel is empty and says it is waiting for data.** Check *Settings → Advanced browser settings* and confirm **Injection time = Start**. On **End** the script loads after Torn has already fetched your bets, so it never sees them.
+- **Panel does not appear at all on the Bookie page.** Confirm custom user scripts are enabled, and that you are on `page.php?sid=bookie` with the `YOUR BETS` view selected.
+- **Panel does not appear on other Torn pages.** Working as intended since v3.1.0. Your bet data only exists on the Bookie page, so the panel would have nothing to show; it now stays out of the way instead of appearing with an error.
+- **Panel appears briefly on the first page after leaving Bookie.** PDA's injection decision lags the URL by a page. The script detects the page itself and does nothing — harmless.
 
 ## Copy A Debug Report
 
