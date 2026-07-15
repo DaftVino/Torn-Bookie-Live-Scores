@@ -17,15 +17,13 @@ A userscript that adds a configurable live scores panel to Torn Bookie. It shows
 
 ## Screenshots
 
-Click any image for full size.
+<!-- One row, full width. Each width is proportional to that image's aspect ratio so the
+     row renders at a uniform height AND totals the column width. Settings is far narrower
+     than the theme shots (0.37 vs ~0.88), hence 12.2% against ~29%. Totals 99.5%, leaving
+     slack so inline whitespace cannot wrap the row. Recompute if a shot is replaced. -->
+<p align="center"><a href="docs/screenshots/default-dark-ui.png" title="Default Dark"><img src="docs/screenshots/default-dark-ui.png" width="29%" alt="Default Dark theme showing the live scores panel with the match details pane open"></a><a href="docs/screenshots/retro-c65-ui.png" title="C64 Retro"><img src="docs/screenshots/retro-c65-ui.png" width="29.4%" alt="C64 Retro theme showing the live scores panel with the match details pane open"></a><a href="docs/screenshots/things-ui.png" title="Things"><img src="docs/screenshots/things-ui.png" width="28.9%" alt="Things theme showing the live scores panel with the match details pane open"></a><a href="docs/screenshots/options.png" title="Settings"><img src="docs/screenshots/options.png" width="12.2%" alt="Settings panel showing theme, layout, display toggles, score sources, and sport filters"></a></p>
 
-| Default Dark | C64 Retro |
-|:---:|:---:|
-| <a href="docs/screenshots/default-dark-ui.png"><img src="docs/screenshots/default-dark-ui.png" height="400" alt="Default Dark theme showing the live scores panel with the match details pane open"></a> | <a href="docs/screenshots/retro-c65-ui.png"><img src="docs/screenshots/retro-c65-ui.png" height="400" alt="C64 Retro theme showing the live scores panel with the match details pane open"></a> |
-
-| Things | Settings |
-|:---:|:---:|
-| <a href="docs/screenshots/things-ui.png"><img src="docs/screenshots/things-ui.png" height="400" alt="Things theme showing the live scores panel with the match details pane open"></a> | <a href="docs/screenshots/options.png"><img src="docs/screenshots/options.png" height="400" alt="Settings panel showing theme, layout, display toggles, score sources, and sport filters"></a> |
+<p align="center"><sub><b>Default Dark</b> · <b>C64 Retro</b> · <b>Things</b> · <b>Settings</b> — click any image for full size</sub></p>
 
 ## Features
 
