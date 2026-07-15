@@ -12,7 +12,14 @@ The deployment model is intentionally simple: one IIFE, no runtime dependencies,
 
 ## Bootstrap And Capture Flow
 
-The script runs at `document-start` and installs two page-realm interceptors:
+The script runs at `document-start` and first decides whether it should run at all. Two runtime context checks gate everything below them, in order:
+
+- `isSofascoreContext()` — on SofaScore, install only the token capture and return.
+- `isBookiePageContext()` — off the Torn Bookie page, return immediately.
+
+`isBookiePageContext()` requires hostname (`www.torn.com` / `torn.com`), path (`/page.php`), and `sid=bookie` — deliberately at least as strict as the `@match`. This exists because Torn PDA does not honour `@match` and injects the script on every Torn page ([TORN_PDA.md](TORN_PDA.md)). The early return is what keeps the interceptors, listeners, panel, and timers off every page that is not the Bookie page. **Anything added above that return runs on every Torn page PDA injects into**; keep new work below it.
+
+On the Bookie page it then installs two page-realm interceptors:
 
 - `fetch` wrapper: watches only URLs containing `sid=bookieApi`.
 - `XMLHttpRequest` wrapper: watches only URLs containing `sid=bookieApi`.

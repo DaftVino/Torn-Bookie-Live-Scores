@@ -5,6 +5,16 @@ Userscript version reviewed: `3.0.0`
 
 This roadmap consolidates accepted future work from the local planning docs. It is not a release promise. Keep implementation plans in issues/branches; keep only durable direction here.
 
+## Completed In v3.1.0
+
+### Torn PDA Compatibility ✓
+
+The script is scoped at runtime instead of relying on `@match`, which PDA does not honour. Off the Bookie page it returns before installing interceptors, listeners, panel, or timers. See [TORN_PDA.md](TORN_PDA.md).
+
+- `isBookiePageContext()` — hostname + `/page.php` + `sid=bookie`, at least as strict as the `@match`
+- Panel fills the viewport on phones; `dvh` height; 44px touch targets
+- `SCRIPT_VERSION` fallback pinned to `@version` by test (PDA has no `GM_info`)
+
 ## Completed In v3.0.0
 
 ### Phase 1: Action Feedback Foundation ✓
@@ -142,7 +152,9 @@ These remain plausible but should wait for user evidence:
 - source trace ladder,
 - copy templates,
 - pinned/favorite games,
-- settings search.
+- settings search,
+- panel top offset and safe-area insets for PDA's app bar and device notches (needs an on-device header measurement — see `TODOS.md`),
+- an `isTornPdaContext()` helper via `window.flutter_inappwebview`, only if a behaviour must genuinely differ between PDA and desktop. Page-type detection is correct on both today, so this stays unbuilt.
 
 Build them only if earlier selected-game, copy receipt, and provider-health work still leaves a clear workflow gap.
 

@@ -15,6 +15,16 @@ A userscript that adds a configurable live scores panel to Torn Bookie. It shows
 - **Enhanced tennis coverage**: ESPN date-board parsing and live SofaScore fallback for Challenger matches
 - **Stricter provider validation**: SofaScore no longer spams 404s on live football; token refresh reserved for auth failures only
 
+## Screenshots
+
+| Default Dark | C64 Retro |
+|---|---|
+| ![Default Dark theme showing the live scores panel with the match details pane open](docs/screenshots/default-dark-ui.png) | ![C64 Retro theme showing the live scores panel with the match details pane open](docs/screenshots/retro-c65-ui.png) |
+
+| Things | Settings |
+|---|---|
+| ![Things theme showing the live scores panel with the match details pane open](docs/screenshots/things-ui.png) | ![Settings panel showing theme, layout, display toggles, score sources, and sport filters](docs/screenshots/options.png) |
+
 ## Features
 
 - Live and upcoming bet panel for Torn Bookie with selected-game context
@@ -44,6 +54,8 @@ https://www.torn.com/page.php?sid=bookie
 Injection time **must** be Start. The script captures your bets by intercepting Torn's own network calls at `document-start`; on **End** it loads too late to see them and the panel will sit empty.
 
 Torn PDA does not honour `@match` ([torn-pda#314](https://github.com/Manuito83/torn-pda/issues/314)), so it injects the script on every Torn page regardless of what the metadata block says. That is expected and harmless — as of v3.1.0 the script detects the page itself and does nothing outside Bookie. The panel only appears on the Bookie page; this is intentional, since your bet data is only available there.
+
+Full notes, including why the runtime check is stricter than the `@match` it replaces: [docs/TORN_PDA.md](docs/TORN_PDA.md).
 
 ## Privacy
 

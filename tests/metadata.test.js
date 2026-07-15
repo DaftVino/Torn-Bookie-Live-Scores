@@ -56,10 +56,21 @@ test('README documents the Torn PDA install steps', () => {
   assert.match(readme, /custom user scripts/i);
 });
 
-test('no shipped file claims Torn PDA is unsupported', () => {
-  for (const file of ['CHANGELOG.md', 'README.md']) {
-    const text = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-    assert.ok(!/Torn PDA is not supported/i.test(text), `${file} still claims PDA is unsupported`);
+test('no shipped doc claims Torn PDA is unsupported', () => {
+  // Enumerate rather than hand-list: TROUBLESHOOTING.md kept the stale claim through a
+  // release because the original version of this test only checked CHANGELOG and README.
+  const root = path.join(__dirname, '..');
+  const docsDir = path.join(root, 'docs');
+  const files = [
+    ...['CHANGELOG.md', 'README.md'].map(f => path.join(root, f)),
+    ...fs.readdirSync(docsDir).filter(f => f.endsWith('.md')).map(f => path.join(docsDir, f)),
+  ];
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8');
+    assert.ok(
+      !/Torn PDA is not supported|NOT COMPATIBLE WITH TORN PDA/i.test(text),
+      `${path.relative(root, file)} still claims Torn PDA is unsupported`,
+    );
   }
 });
 
