@@ -6,7 +6,7 @@ Deferred work with rationale. Items here are consciously postponed, not forgotte
 
 ### Panel top offset and safe-area insets
 
-**Deferred from:** [#1](https://github.com/DaftVino/Torn-Bookie-Live-Scores/issues/1) (Torn PDA compatibility), §4E.3 of `torn_pda_update.md`.
+**Deferred from:** [#1](https://github.com/DaftVino/Torn-Bookie-Live-Scores/issues/1) (Torn PDA compatibility). Background: [docs/TORN_PDA.md](docs/TORN_PDA.md).
 
 The panel's `#${PANEL_ID}` rule hardcodes `top: ${PANEL_TOP}px` (90px, from the `PANEL_TOP` constant), which assumes the desktop Torn header height. Torn PDA's app bar is a different height, and there is no allowance for device notches. The details pane reuses the same constant.
 

@@ -6,7 +6,7 @@ Userscript version reviewed: `3.0.0`
 
 ## Purpose
 
-Torn Bookie Live Scores is a single-file Tampermonkey userscript. It captures the Torn Bookie page's own `sid=bookieApi` responses, renders a compact live/upcoming bets panel, and enriches live bets with public score providers plus optional BYOK odds and esports integrations.
+Torn Bookie Live Scores is a single-file userscript. It captures the Torn Bookie page's own `sid=bookieApi` responses, renders a compact live/upcoming bets panel, and enriches live bets with public score providers plus optional BYOK odds and esports integrations. It runs under Tampermonkey on desktop and inside Torn PDA on Android ([TORN_PDA.md](TORN_PDA.md)); PDA is not Tampermonkey, and the differences it forces are called out where they matter below.
 
 The deployment model is intentionally simple: one IIFE, no runtime dependencies, no build step, and no code exported to the page except the required userscript hooks.
 
