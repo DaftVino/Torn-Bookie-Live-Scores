@@ -1,5 +1,26 @@
 # Changelog
 
+## Torn Bookie Live Scores v3.1.0 - 2026-07-14
+
+### Torn PDA Compatibility
+
+- The script now works in Torn PDA. Torn PDA does not honour `@match` ([torn-pda#314](https://github.com/Manuito83/torn-pda/issues/314)) and injects userscripts on pages the author never targeted, so the panel used to appear on other Torn sections showing "Refresh failed" and re-running a failing fetch every 30 seconds.
+- Page scoping is now enforced at runtime instead of relying on the metadata block. Off the Bookie page the script returns immediately: no panel, no `fetch`/XHR interception, no refresh loop, no network requests.
+- The runtime check matches the `@match` it stands in for: hostname, path, and `sid` must all line up. A URL like `torn.com/city.php?sid=bookie` does not activate the panel.
+- This also reduces attack surface on desktop and in PDA. The `fetch`/`XMLHttpRequest` interception and the global error listeners now install only on the Bookie page rather than on every Torn page the script is injected into.
+- Install note for PDA: enable *Settings → Advanced browser settings → enable custom user scripts*, and set **Injection time = Start**. The script intercepts network calls at `document-start` and will not capture your bets on **End**.
+
+### Mobile Layout
+
+- The panel now fills the screen width on phones (viewport minus a 12px gap per side) instead of staying at a fixed 360px and leaving dead space.
+- Panel height now tracks the dynamic viewport (`dvh`), so it no longer runs off-screen under Torn PDA's app bar. Falls back to `vh` on engines without `dvh`.
+- The collapse toggle and refresh controls now present a 44px hit area on touch devices. Desktop sizing is unchanged.
+
+### Housekeeping
+
+- Shortened the script description for the Greasyfork listing.
+- Added `TODOS.md` to track deferred work.
+
 ## Torn Bookie Live Scores v3.0.0 - 2026-06-25
 
 ### Provider Matching Intelligence
@@ -130,7 +151,6 @@ These notes describe the feature set present on `main` at version `2.5.3`, befor
 
 ## Known Limitations
 
-- Torn PDA is not supported.
 - Some provider sport feeds are intentionally disabled where their public endpoints returned unreliable 404 responses in this version.
 - The Odds API analysis is limited to mapped sports/leagues: MLB, NBA, WNBA, NHL, NFL, CFL, AFL, NRL, and MLS.
 - PandaScore only covers the mapped esports listed above and requires a user-provided token.

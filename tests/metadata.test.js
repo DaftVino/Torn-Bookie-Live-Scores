@@ -27,6 +27,42 @@ test('required metadata directives are present', () => {
   assert.equal(metaValues('run-at')[0], 'document-start'); // needed to intercept early
 });
 
+test('@description fits the store listing and does not disclaim PDA support', () => {
+  const description = metaValues('description')[0];
+  // Greasyfork renders the whole description; keep it scannable.
+  assert.ok(description.length <= 500, `@description is ${description.length} chars, max 500`);
+  // The script is runtime-scoped for PDA as of 3.1.0; the old disclaimer must not survive.
+  assert.ok(!/NOT COMPATIBLE WITH TORN PDA/i.test(description));
+  // The debug-report ask is the only inbound support funnel; do not let it get trimmed away.
+  assert.ok(/debug mode/i.test(description));
+});
+
+test('CHANGELOG documents the current @version', () => {
+  const changelog = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const headerVersion = metaValues('version')[0];
+  const topHeading = changelog.match(/^## Torn Bookie Live Scores v(\S+) - (\S+)$/m);
+  assert.ok(topHeading, 'CHANGELOG needs a "## Torn Bookie Live Scores vX.Y.Z - YYYY-MM-DD" heading');
+  assert.equal(topHeading[1], headerVersion, '@version and the newest CHANGELOG entry must agree');
+  assert.match(topHeading[2], /^\d{4}-\d{2}-\d{2}$/, 'CHANGELOG date must be YYYY-MM-DD, not a placeholder');
+});
+
+test('README documents the Torn PDA install steps', () => {
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  assert.match(readme, /Installing on Torn PDA/i);
+  // Injection time = Start is required: the script intercepts network calls at
+  // document-start. On "End" it loads too late and the panel sits empty.
+  assert.match(readme, /Injection time/i);
+  assert.match(readme, /\bStart\b/);
+  assert.match(readme, /custom user scripts/i);
+});
+
+test('no shipped file claims Torn PDA is unsupported', () => {
+  for (const file of ['CHANGELOG.md', 'README.md']) {
+    const text = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    assert.ok(!/Torn PDA is not supported/i.test(text), `${file} still claims PDA is unsupported`);
+  }
+});
+
 test('@match is tightly scoped to Torn bookie plus SofaScore token refresh (no broad host access)', () => {
   const matches = metaValues('match');
   assert.deepEqual([...matches].sort(), [
@@ -90,8 +126,10 @@ test('SCRIPT_VERSION defaults to @version when GM_info is absent', () => {
   const { loadUserscript } = require('./load-userscript.js');
   const api = loadUserscript();
   const headerVersion = metaValues('version')[0];
-  assert.equal(headerVersion, '2.5.8');
-  assert.equal(api.SCRIPT_VERSION, '2.5.8');
+  // Assert the invariant, not a literal. This previously pinned '2.5.8' and silently
+  // rotted as the header moved on; the point of the test is that the two agree.
+  assert.match(headerVersion, /^\d+\.\d+\.\d+$/);
+  assert.equal(api.SCRIPT_VERSION, headerVersion);
 });
 
 test('SCRIPT_VERSION is overridden by injected GM_info.script.version', () => {

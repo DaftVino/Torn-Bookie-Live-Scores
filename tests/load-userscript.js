@@ -110,6 +110,7 @@ const EXPORT_NAMES = [
   'providerCache', 'inFlightRequests', 'resolvedEventCache', 'enrichmentCache',
   'uiSettings', 'DEFAULT_UI_SETTINGS', 'CONFIDENCE_THRESHOLD',
   'PANEL_WIDTH', 'DETAILS_WIDTH', 'EDGE_GAP', 'TOAST_MOBILE_MAX_WIDTH',
+  'isBookiePageContext',
   'DAY_MS', 'HOUR_MS', 'MINUTE_MS', 'TTL_SUCCESS', 'TTL_ERROR',
   'TEAM_ALIASES', 'FOOTBALL_CLUB_ALIAS_GROUPS', 'PROVIDER_PRIORITY',
   'SOURCE_ICONS',
@@ -182,7 +183,12 @@ function makeSandbox(options = {}) {
   XMLHttpRequestStub.prototype = xhrProto;
 
   const listeners = {};
-  const initialLocation = options.location || { origin: 'https://www.torn.com', hostname: 'www.torn.com', pathname: '/page.php', href: 'https://www.torn.com/page.php?sid=bookie', hash: '' };
+  // `search` is required: the script runtime-scopes itself via isBookiePageContext(), which
+  // reads location.search. Omit it and the script early-returns, __TBLS__ is never exported,
+  // and loadUserscript throws "Export injection failed" with no hint as to why. Merge rather
+  // than replace so an override that only cares about hostname still gets a usable search.
+  const defaultLocation = { origin: 'https://www.torn.com', hostname: 'www.torn.com', pathname: '/page.php', href: 'https://www.torn.com/page.php?sid=bookie', search: '?sid=bookie', hash: '' };
+  const initialLocation = { ...defaultLocation, ...(options.location || {}) };
   const windowStub = {
     fetch: async () => ({ clone: () => ({ text: async () => '' }), text: async () => '' }),
     XMLHttpRequest: XMLHttpRequestStub,
@@ -212,7 +218,7 @@ function makeSandbox(options = {}) {
     Date: MockDate,
     Math, JSON, Object, Array, String, Number, Boolean, RegExp, Map, Set, Symbol,
     Promise, Error, TypeError, isNaN, isFinite, parseInt, parseFloat, encodeURIComponent,
-    decodeURIComponent, URL, Headers, Intl,
+    decodeURIComponent, URL, URLSearchParams, Headers, Intl,
     setTimeout: noopTimer, clearTimeout: () => {}, setInterval: noopTimer, clearInterval: () => {},
     window: windowStub,
     document: documentStub,

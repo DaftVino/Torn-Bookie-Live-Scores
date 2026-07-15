@@ -1,6 +1,11 @@
 # Torn Bookie Live Scores
 
-A Tampermonkey userscript that adds a configurable live scores panel to Torn Bookie. It shows live and upcoming bets grouped by sport, pulls public score data from supported providers, and includes optional BYOK odds and esports integrations.
+A userscript that adds a configurable live scores panel to Torn Bookie. It shows live and upcoming bets grouped by sport, pulls public score data from supported providers, and includes optional BYOK odds and esports integrations. Runs under Tampermonkey on desktop and inside Torn PDA on Android.
+
+## What's New in v3.1.0
+
+- **Torn PDA support**: the panel no longer leaks onto other Torn sections showing "Refresh failed". Off the Bookie page the script now does nothing at all — no panel, no network requests, no refresh loop. See [Installing on Torn PDA](#installing-on-torn-pda).
+- **Mobile layout**: the panel fills the screen width on phones instead of leaving dead space, tracks the dynamic viewport so it doesn't run off-screen under PDA's app bar, and gives the collapse and refresh controls 44px touch targets.
 
 ## What's New in v3.0.0
 
@@ -29,6 +34,16 @@ A Tampermonkey userscript that adds a configurable live scores panel to Torn Boo
 ```text
 https://www.torn.com/page.php?sid=bookie
 ```
+
+### Installing on Torn PDA
+
+1. In Torn PDA, go to *Settings → Advanced browser settings* and enable **custom user scripts**.
+2. Add the script.
+3. Set **Injection time** to **Start**.
+
+Injection time **must** be Start. The script captures your bets by intercepting Torn's own network calls at `document-start`; on **End** it loads too late to see them and the panel will sit empty.
+
+Torn PDA does not honour `@match` ([torn-pda#314](https://github.com/Manuito83/torn-pda/issues/314)), so it injects the script on every Torn page regardless of what the metadata block says. That is expected and harmless — as of v3.1.0 the script detects the page itself and does nothing outside Bookie. The panel only appears on the Bookie page; this is intentional, since your bet data is only available there.
 
 ## Privacy
 
