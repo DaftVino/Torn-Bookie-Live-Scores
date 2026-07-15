@@ -17,13 +17,15 @@ A userscript that adds a configurable live scores panel to Torn Bookie. It shows
 
 ## Screenshots
 
+Click any image for full size.
+
 | Default Dark | C64 Retro |
-|---|---|
-| ![Default Dark theme showing the live scores panel with the match details pane open](docs/screenshots/default-dark-ui.png) | ![C64 Retro theme showing the live scores panel with the match details pane open](docs/screenshots/retro-c65-ui.png) |
+|:---:|:---:|
+| <a href="docs/screenshots/default-dark-ui.png"><img src="docs/screenshots/default-dark-ui.png" height="400" alt="Default Dark theme showing the live scores panel with the match details pane open"></a> | <a href="docs/screenshots/retro-c65-ui.png"><img src="docs/screenshots/retro-c65-ui.png" height="400" alt="C64 Retro theme showing the live scores panel with the match details pane open"></a> |
 
 | Things | Settings |
-|---|---|
-| ![Things theme showing the live scores panel with the match details pane open](docs/screenshots/things-ui.png) | ![Settings panel showing theme, layout, display toggles, score sources, and sport filters](docs/screenshots/options.png) |
+|:---:|:---:|
+| <a href="docs/screenshots/things-ui.png"><img src="docs/screenshots/things-ui.png" height="400" alt="Things theme showing the live scores panel with the match details pane open"></a> | <a href="docs/screenshots/options.png"><img src="docs/screenshots/options.png" height="400" alt="Settings panel showing theme, layout, display toggles, score sources, and sport filters"></a> |
 
 ## Features
 
